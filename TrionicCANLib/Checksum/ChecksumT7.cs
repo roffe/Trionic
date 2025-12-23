@@ -175,7 +175,7 @@ namespace TrionicCANLib.Checksum
                         fs.WriteByte(aByte);
                     }
                 }
-                
+
                 fs.Close();
             }
             catch (Exception E)
@@ -209,13 +209,13 @@ namespace TrionicCANLib.Checksum
             uint temp = 0;
             uint checksum = 0;
             uint count = 0;
-             
+
             fs.Position = start;
             checksum = 0;
             count = 0;
             xorCount = 1;
 
-            while( count < length && fs.Position < 0x7FFFF )
+            while (count < length && fs.Position < 0x7FFFF)
             {
                 data[0] = (byte)fs.ReadByte();
                 data[1] = (byte)fs.ReadByte();
@@ -223,14 +223,14 @@ namespace TrionicCANLib.Checksum
                 data[3] = (byte)fs.ReadByte();
                 temp = (uint)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
                 checksum += temp ^ xorTable[xorCount++];
-                if( xorCount > 7 ) xorCount = 0;
+                if (xorCount > 7) xorCount = 0;
                 count += 4;
-            }     
+            }
 
             checksum ^= 0x40314081;
             checksum -= 0x7FEFDFD0;
             fs.Close();
-            return checksum;    
+            return checksum;
         }
 
         static private int calculateFBChecksum(string a_fileName, int start, int length)
@@ -247,7 +247,7 @@ namespace TrionicCANLib.Checksum
                                             0x00, 0x00, 0x26, 0x7C, 0x00, 0x00, 0x00, 0x00,
                                             0x28, 0x7C, 0x00, 0xF0, 0x00, 0x00, 0x2A, 0x7C};
             byte[] seq_mask = new byte[24] {1, 1, 1, 1, 1, 1, 1, 1,
-                                            0, 0, 1, 1, 1, 0, 0, 0,   
+                                            0, 0, 1, 1, 1, 0, 0, 0,
                                             1, 1, 1, 1, 0, 0, 1, 1};
             byte data;
             int i, max;
@@ -257,18 +257,18 @@ namespace TrionicCANLib.Checksum
             while (a_fileStream.Position < 0x7FFFF)
             {
                 data = (byte)a_fileStream.ReadByte();
-                if( data == sequence[i] || seq_mask[i] == 0 )
+                if (data == sequence[i] || seq_mask[i] == 0)
                 {
                     i++;
                 }
                 else
                 {
-                    if( i > max ) max = i;
+                    if (i > max) max = i;
                     i = 0;
                 }
-                if( i == 24 ) break;            
+                if (i == 24) break;
             }
-            if( i == 24 )
+            if (i == 24)
             {
                 return ((int)a_fileStream.Position - 24);
             }
@@ -281,90 +281,90 @@ namespace TrionicCANLib.Checksum
         static private CheckSum findFWChecksum(FileStream a_fileStream, int areaStart)
         {
             logger.Debug("findFWChecksum with areaStart: " + areaStart.ToString("X8"));
-             byte[] data = new byte[4];
-             byte areaNumber = 0;
-             int baseAddr = 0;
-             int ltemp = 0;
-             int csumAddr = 0;
-             short csumLength = 0;
-             CheckSum r_checkSum = new CheckSum();
-             if (areaStart > 0x7FFFF)
-             {
-                 r_checkSum.checksumAddress = -1;
-                 r_checkSum.checksumValue = -1;
-                 return r_checkSum;
-             }
-             
-             a_fileStream.Position = (areaStart + 22);
-             
-             while( a_fileStream.Position < 0x7FFFF )
-             {
+            byte[] data = new byte[4];
+            byte areaNumber = 0;
+            int baseAddr = 0;
+            int ltemp = 0;
+            int csumAddr = 0;
+            short csumLength = 0;
+            CheckSum r_checkSum = new CheckSum();
+            if (areaStart > 0x7FFFF)
+            {
+                r_checkSum.checksumAddress = -1;
+                r_checkSum.checksumValue = -1;
+                return r_checkSum;
+            }
+
+            a_fileStream.Position = (areaStart + 22);
+
+            while (a_fileStream.Position < 0x7FFFF)
+            {
+                data[0] = (byte)a_fileStream.ReadByte();
+                data[1] = (byte)a_fileStream.ReadByte();
+                if (data[0] == 0x48)
+                {
+                    switch (data[1])
+                    {
+                        case 0x6D:
+                            data[0] = (byte)a_fileStream.ReadByte();
+                            data[1] = (byte)a_fileStream.ReadByte();
+                            csumAddr = baseAddr + (int)(data[0] << 8 | data[1]);
+                            csumArea[areaNumber].addr = csumAddr;
+                            areaNumber++;
+                            break;
+                        case 0x78:
+                            data[0] = (byte)a_fileStream.ReadByte();
+                            data[1] = (byte)a_fileStream.ReadByte();
+                            csumLength = (short)(data[0] << 8 | data[1]);
+                            csumArea[areaNumber].length = csumLength;
+                            break;
+                        case 0x79:
+                            data[0] = (byte)a_fileStream.ReadByte();
+                            data[1] = (byte)a_fileStream.ReadByte();
+                            data[2] = (byte)a_fileStream.ReadByte();
+                            data[3] = (byte)a_fileStream.ReadByte();
+                            csumAddr = (int)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
+                            csumArea[areaNumber].addr = csumAddr;
+                            areaNumber++;
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                else if (data[0] == 0x2A && data[1] == 0x7C)
+                {
                     data[0] = (byte)a_fileStream.ReadByte();
                     data[1] = (byte)a_fileStream.ReadByte();
-                    if( data[0] == 0x48 )
+                    data[2] = (byte)a_fileStream.ReadByte();
+                    data[3] = (byte)a_fileStream.ReadByte();
+                    ltemp = (int)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
+                    if (ltemp < 0xF00000L)
                     {
-                        switch( data[1] )
-                        {
-                            case 0x6D:
-                                data[0] = (byte)a_fileStream.ReadByte();
-                                data[1] = (byte)a_fileStream.ReadByte();
-                                csumAddr = baseAddr + (int)(data[0] << 8 | data[1]);
-                                csumArea[areaNumber].addr = csumAddr;
-                                areaNumber++;
-                                break;
-                            case 0x78:
-                                data[0] = (byte)a_fileStream.ReadByte();
-                                data[1] = (byte)a_fileStream.ReadByte();
-                                csumLength = (short)(data[0] << 8 | data[1]);
-                                csumArea[areaNumber].length = csumLength;
-                                break;
-                            case 0x79:
-                                data[0] = (byte)a_fileStream.ReadByte();
-                                data[1] = (byte)a_fileStream.ReadByte();
-                                data[2] = (byte)a_fileStream.ReadByte();
-                                data[3] = (byte)a_fileStream.ReadByte();
-                                csumAddr = (int)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
-                                csumArea[areaNumber].addr = csumAddr;
-                                areaNumber++;
-                                break;
-                            default:
-                                break;
-                        }
+                        baseAddr = ltemp;
                     }
-                    else if( data[0] == 0x2A && data[1] == 0x7C )
-                    {
-                        data[0] = (byte)a_fileStream.ReadByte();
-                        data[1] = (byte)a_fileStream.ReadByte();
-                        data[2] = (byte)a_fileStream.ReadByte();
-                        data[3] = (byte)a_fileStream.ReadByte();
-                        ltemp = (int)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
-                        if( ltemp < 0xF00000L )
-                        {
-                            baseAddr = ltemp;
-                        }
-                    }
-                    else if( data[0] == 0xB0 && data[1] == 0xB9 )
-                    {
-                        data[0] = (byte)a_fileStream.ReadByte();
-                        data[1] = (byte)a_fileStream.ReadByte();
-                        data[2] = (byte)a_fileStream.ReadByte();
-                        data[3] = (byte)a_fileStream.ReadByte();
-                        csumAddr = (int)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
-                        r_checkSum.checksumAddress = csumAddr;
+                }
+                else if (data[0] == 0xB0 && data[1] == 0xB9)
+                {
+                    data[0] = (byte)a_fileStream.ReadByte();
+                    data[1] = (byte)a_fileStream.ReadByte();
+                    data[2] = (byte)a_fileStream.ReadByte();
+                    data[3] = (byte)a_fileStream.ReadByte();
+                    csumAddr = (int)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
+                    r_checkSum.checksumAddress = csumAddr;
 
-                        long tmpPos = a_fileStream.Position;
-                        a_fileStream.Position = r_checkSum.checksumAddress;
-                        data[0] = (byte)a_fileStream.ReadByte();
-                        data[1] = (byte)a_fileStream.ReadByte();
-                        data[2] = (byte)a_fileStream.ReadByte();
-                        data[3] = (byte)a_fileStream.ReadByte();
-                        a_fileStream.Position = tmpPos;
-                        r_checkSum.checksumValue = (int)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
-                        
-                        break;
-                    }
-             }
-             return r_checkSum;
+                    long tmpPos = a_fileStream.Position;
+                    a_fileStream.Position = r_checkSum.checksumAddress;
+                    data[0] = (byte)a_fileStream.ReadByte();
+                    data[1] = (byte)a_fileStream.ReadByte();
+                    data[2] = (byte)a_fileStream.ReadByte();
+                    data[3] = (byte)a_fileStream.ReadByte();
+                    a_fileStream.Position = tmpPos;
+                    r_checkSum.checksumValue = (int)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
+
+                    break;
+                }
+            }
+            return r_checkSum;
         }
 
         static private int calculateChecksum(FileStream a_fileStream, long start, int length)
@@ -373,12 +373,12 @@ namespace TrionicCANLib.Checksum
             byte checksum8;
             int checksum;
             int count;
-             
+
             a_fileStream.Position = start;
             checksum = 0;
             count = 0;
 
-            while( count < (length >> 2) && a_fileStream.Position < 0x7FFFF )
+            while (count < (length >> 2) && a_fileStream.Position < 0x7FFFF)
             {
                 data[0] = (byte)a_fileStream.ReadByte();
                 data[1] = (byte)a_fileStream.ReadByte();
@@ -386,7 +386,7 @@ namespace TrionicCANLib.Checksum
                 data[3] = (byte)a_fileStream.ReadByte();
                 checksum += (int)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
                 count++;
-            }     
+            }
             count = count << 2;
             checksum8 = 0;
 
@@ -398,8 +398,8 @@ namespace TrionicCANLib.Checksum
             }
 
             checksum += checksum8;
-            
+
             return checksum;
         }
-    }  
+    }
 }

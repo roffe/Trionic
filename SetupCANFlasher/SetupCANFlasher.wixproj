@@ -52,7 +52,7 @@
     </WixExtension>
   </ItemGroup>
   <ItemGroup>
-    <Content Include="disclamer.rtf" />
+    <Content Include="disclaimer.rtf" />
   </ItemGroup>
   <Import Project="$(WixTargetsPath)" />
   <!--

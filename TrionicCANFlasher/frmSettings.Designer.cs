@@ -296,6 +296,9 @@
             this.cbxInterFrame.Enabled = false;
             this.cbxInterFrame.FormattingEnabled = true;
             this.cbxInterFrame.Items.AddRange(new object[] {
+            "50",
+            "100",
+            "200",
             "300",
             "400",
             "500",

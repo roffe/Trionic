@@ -41,7 +41,7 @@ namespace TrionicCANLib.Checksum
                         filechecksum += layer1checksuminfile[i].ToString("X2") + " ";
                         realchecksum += hash[i].ToString("X2") + " ";
                     }
-                    if(delegateShouldUpdate("Checksum validation Layer 1", filechecksum, realchecksum))
+                    if (delegateShouldUpdate("Checksum validation Layer 1", filechecksum, realchecksum))
                     {
                         if (!FileTools.savedatatobinary(checksumAreaOffset + 2, 16, hash, filename))
                         {

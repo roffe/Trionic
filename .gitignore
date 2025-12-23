@@ -237,3 +237,4 @@ pip-log.txt
 project.lock.json
 project.assets.json
 *.nuget.props
+.vs

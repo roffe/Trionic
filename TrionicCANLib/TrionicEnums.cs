@@ -41,7 +41,9 @@ namespace TrionicCANLib.API
         [Description("Kvaser HS")]
         KVASER,
         [Description("J2534")]
-        J2534
+        J2534,
+        [Description("SLCAN")]
+        SLCAN
     };
 
     public enum ECU : int

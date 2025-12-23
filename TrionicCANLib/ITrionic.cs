@@ -137,6 +137,10 @@ namespace TrionicCANLib.API
                 {
                     return J2534CANDevice.GetAdapterNames();
                 }
+                else if (adapterType == CANBusAdapter.SLCAN)
+                {
+                    return SLCANDevice.GetAdapterNames();
+                }
             }
             catch(Exception ex)
             {

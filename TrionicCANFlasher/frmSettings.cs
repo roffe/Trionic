@@ -49,6 +49,7 @@ namespace TrionicCANFlasher
             private int m_index = 9;
             private static uint[] m_dels = 
             {
+                50, 100, 200,
                 300, 400, 500, 600, 700,
                 800, 900,1000,1100,1200, // (Default)
                1300,1400,1500,1600,1700,
@@ -642,7 +643,7 @@ namespace TrionicCANFlasher
                 }
                 catch (Exception ex)
                 {
-                    logger.Debug(ex.Message);
+                    logger.Debug("GetAdapterInformation:" + ex.Message);
                 }
             }
         }
@@ -686,6 +687,14 @@ namespace TrionicCANFlasher
                 {
                     cbxAdapterItem.Enabled = true;
                     AdapterLabel.Enabled = true;
+                }
+
+                if (typeindex == (int)CANBusAdapter.SLCAN)
+                {
+                    cbxAdapterItem.Enabled = true;
+                    AdapterLabel.Enabled = true;
+                    ComBaudLabel.Enabled = true;
+                    cbxComSpeed.Enabled = false;
                 }
 
                 if (typeindex == (int)CANBusAdapter.ELM327)

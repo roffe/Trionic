@@ -129,6 +129,10 @@ namespace TrionicCANLib.API
             {
                 canUsbDevice = new J2534CANDevice();
             }
+            else if (adapterType == CANBusAdapter.SLCAN)
+            {
+                canUsbDevice = new SLCANDevice();
+            }
 
             canUsbDevice.bypassCANfilters = m_filterBypass;
             canUsbDevice.UseOnlyPBus = m_OnlyPBus;

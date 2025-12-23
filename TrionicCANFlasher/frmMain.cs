@@ -387,11 +387,11 @@ namespace TrionicCANFlasher
         {
             if (AppSettings.EnableLogging)
             {
-                LogManager.EnableLogging();
+                LogManager.ResumeLogging();
             }
             else
             {
-                LogManager.DisableLogging();
+                LogManager.SuspendLogging();
             }
         }
 
@@ -441,6 +441,9 @@ namespace TrionicCANFlasher
             {
                 case (int)CANBusAdapter.JUST4TRIONIC:
                     trionic.ForcedBaudrate = 115200;
+                    break;
+                case (int)CANBusAdapter.SLCAN:
+                    trionic.ForcedBaudrate = 3000000;
                     break;
                 case (int)CANBusAdapter.ELM327:
                     //set selected com speed
@@ -1972,7 +1975,7 @@ namespace TrionicCANFlasher
                 btnLogData.Text = "Busy..";
 
                 // Force logging on
-                LogManager.EnableLogging();
+                LogManager.ResumeLogging();
                 dtstart = DateTime.Now;
                 if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC5)
                 {

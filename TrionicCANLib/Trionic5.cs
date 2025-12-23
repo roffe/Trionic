@@ -81,8 +81,8 @@ namespace TrionicCANLib.API
 
         // Made global as an attempt to make things consistent.
         private const int ChecksumTimeoutmS = 10000;
-        private const int GeneralTimeoutmS  =  1000;
-        private const int EraseTimeoutmS    = 60000;
+        private const int GeneralTimeoutmS = 1000;
+        private const int EraseTimeoutmS = 60000;
 
         private string CR = "\r";
         private string NL = "\n";
@@ -178,6 +178,10 @@ S9035000AC";
             {
                 canUsbDevice = new J2534CANDevice();
             }
+            else if (adapterType == CANBusAdapter.SLCAN)
+            {
+                canUsbDevice = new SLCANDevice();
+            }
 
             canUsbDevice.UseOnlyPBus = true;
             canUsbDevice.TrionicECU = ECU.TRIONIC5;
@@ -248,7 +252,7 @@ S9035000AC";
         private ECUType DetermineECU()
         {
             byte[] chiptypes = GetChipTypes();
-            byte[] footer    = getECUFooter();
+            byte[] footer = getECUFooter();
             string flashzize = "256 kB";
 
             string romoffset = getIdentifierFromFooter(footer, ECUIdentifier.ROMoffset);
@@ -816,10 +820,10 @@ S9035000AC";
 
         private bool sendWriteCommand(UInt16 address, byte data)
         {
-            string addr     = Convert.ToString(address, 16);
+            string addr = Convert.ToString(address, 16);
             string sendData = Convert.ToString(data, 16);
 
-            addr     = addr.ToUpper();
+            addr = addr.ToUpper();
             sendData = sendData.ToUpper();
 
             while (addr.Length < 4)
@@ -851,10 +855,10 @@ S9035000AC";
 
         public byte[] sendBootLoaderEraseCommand()
         {
-            CANMessage msg      = new CANMessage(0x005, 0, 8);
+            CANMessage msg = new CANMessage(0x005, 0, 8);
             CANMessage response = new CANMessage();
-            byte[] retData      = new byte[8];
-            ulong data, cmd     = 0xC0;
+            byte[] retData = new byte[8];
+            ulong data, cmd = 0xC0;
 
             // This is why ELM is NOT fun to work with...
             if (canUsbDevice is CANELM327Device)
@@ -893,12 +897,12 @@ S9035000AC";
         // sending A5 address command for uploading bootloader and flash file
         public byte[] sendBootloaderAddressCommand(Int32 address, byte len)
         {
-            CANMessage msg      = new CANMessage(0x005, 0, 8);
+            CANMessage msg = new CANMessage(0x005, 0, 8);
             CANMessage response = new CANMessage();
-            byte[] retData      = new byte[8];
-            ulong data, cmd     = 0xA5;
+            byte[] retData = new byte[8];
+            ulong data, cmd = 0xA5;
 
-            cmd |= (ulong)(byte) (address & 0x0000FF) << 4 * 8;
+            cmd |= (ulong)(byte)(address & 0x0000FF) << 4 * 8;
             cmd |= (ulong)(byte)((address & 0x00FF00) >> 8) << 3 * 8;
             cmd |= (ulong)(byte)((address & 0xFF0000) >> 2 * 8) << 2 * 8;
             cmd |= (ulong)((byte)(len)) << 5 * 8;
@@ -913,7 +917,7 @@ S9035000AC";
             }
 
             response = m_canListener.waitMessage(GeneralTimeoutmS);
-            data     = response.getData();
+            data = response.getData();
 
             for (int i = 0; i < 8; i++)
                 retData[7 - i] = (byte)(data >> i * 8);
@@ -924,12 +928,12 @@ S9035000AC";
 
         public byte[] sendBootVectorAddressSRAM(Int32 address)
         {
-            CANMessage msg      = new CANMessage(0x005, 0, 8);
+            CANMessage msg = new CANMessage(0x005, 0, 8);
             CANMessage response = new CANMessage();
-            byte[] retData      = new byte[8];
-            ulong  cmd          = 0xC1;
+            byte[] retData = new byte[8];
+            ulong cmd = 0xC1;
 
-            cmd |= (ulong)(byte) (address & 0x0000FF) << 4 * 8;
+            cmd |= (ulong)(byte)(address & 0x0000FF) << 4 * 8;
             cmd |= (ulong)(byte)((address & 0x00FF00) >> 8) << 3 * 8;
             cmd |= (ulong)(byte)((address & 0xFF0000) >> 2 * 8) << 2 * 8;
 
@@ -941,8 +945,8 @@ S9035000AC";
                 logger.Debug("Couldn't send message");
                 return retData;
             }
-            
-            response   = m_canListener.waitMessage(GeneralTimeoutmS);
+
+            response = m_canListener.waitMessage(GeneralTimeoutmS);
             ulong data = response.getData();
 
             for (int i = 0; i < 8; i++)
@@ -955,11 +959,11 @@ S9035000AC";
         // sending data from bootloader or flash file 
         public byte[] sendBootloaderDataCommand(byte[] data, byte len)
         {
-            CANMessage msg      = new CANMessage(0x005, 0, 8);
+            CANMessage msg = new CANMessage(0x005, 0, 8);
             CANMessage response = new CANMessage();
-            byte[] retData      = new byte[8];
-            ulong  uldata, cmd  = 0;
-            int    cnt          = 0;
+            byte[] retData = new byte[8];
+            ulong uldata, cmd = 0;
+            int cnt = 0;
 
             foreach (byte b in data)
                 cmd |= (ulong)((byte)b) << (cnt++) * 8;
@@ -1004,13 +1008,13 @@ S9035000AC";
         // address can be a 32 bit address to read FLASH BIN only after the bootloader has been loaded
         private byte[] sendReadCommand(UInt32 address)
         {
-            CANMessage msg      = new CANMessage(0x005, 0, 8);
+            CANMessage msg = new CANMessage(0x005, 0, 8);
             CANMessage response = new CANMessage();
-            byte[] retData      = new byte[6];
-            ulong  data, cmd    = 0xC7;
+            byte[] retData = new byte[6];
+            ulong data, cmd = 0xC7;
 
             //          Console.WriteLine("Send read command");
-            cmd |= (ulong)(byte) (address & 0x000000FF) << 4 * 8;
+            cmd |= (ulong)(byte)(address & 0x000000FF) << 4 * 8;
             cmd |= (ulong)(byte)((address & 0x0000FF00) >> 8) << 3 * 8;
             cmd |= (ulong)(byte)((address & 0x00FF0000) >> 2 * 8) << 2 * 8;
             cmd |= (ulong)(byte)((address & 0xFF000000) >> 3 * 8) << 8;
@@ -1025,7 +1029,7 @@ S9035000AC";
 
             //sw.Stop();
             //Console.WriteLine("Send took " + sw.ElapsedMilliseconds.ToString() + " ms");
-            
+
             //sw.Reset();
             //sw.Start();
 
@@ -1152,10 +1156,10 @@ S9035000AC";
 
         private void sendCommandByte(char a_commandByte)
         {
-            CANMessage msg   = new CANMessage(0x005, 0, 8);
-            int max_sends    = 5000; // revert back to 5000!
-            uint nrOfResends =    0;
-            ulong cmd        =    0;
+            CANMessage msg = new CANMessage(0x005, 0, 8);
+            int max_sends = 5000; // revert back to 5000!
+            uint nrOfResends = 0;
+            ulong cmd = 0;
 
             cmd |= (ulong)a_commandByte;
             cmd <<= 8;
@@ -1163,7 +1167,7 @@ S9035000AC";
             cmd |= 0xFFFFFFFFFFFF0000;
 
             msg.setData(cmd);
-            
+
             while (!canUsbDevice.sendMessage(msg))
             {
                 if (nrOfResends++ > max_sends)
@@ -1202,12 +1206,12 @@ S9035000AC";
         private string waitForResponse()
         {
             CANMessage response = new CANMessage();
-            bool   timeout      = false;
+            bool timeout = false;
             string returnString = "";
 
             m_canListener.setupWaitMessage(0x00c);
             response = m_canListener.waitMessage(GeneralTimeoutmS);
-            
+
             if (timeout)
             {
                 return TIMEOUT;
@@ -1243,9 +1247,9 @@ S9035000AC";
         private string waitForResponse(int mstimeout)
         {
             CANMessage response = new CANMessage();
-            bool   timeout      = false;
+            bool timeout = false;
             string returnString = "";
-            
+
             m_canListener.setupWaitMessage(0x00c);
             response = m_canListener.waitMessage(mstimeout);
 
@@ -1315,7 +1319,7 @@ S9035000AC";
         private string waitNoAck()
         {
             CANMessage response = new CANMessage();
-            bool   timeout      = false;
+            bool timeout = false;
             string returnString = "";
 
             m_canListener.setupWaitMessage(0x00c);
@@ -1350,7 +1354,7 @@ S9035000AC";
 
             //if (m_canDevice == null)
             //    throw new Exception("CAN device not set");
-            
+
             ack.setData(0x00000000000000C6);
 
             if (!canUsbDevice.sendMessage(ack))
@@ -1412,10 +1416,10 @@ S9035000AC";
         /// <returns></returns>
         public byte[] sendC2Command()
         {
-            CANMessage msg      = new CANMessage(0x005, 0, 8);
+            CANMessage msg = new CANMessage(0x005, 0, 8);
             CANMessage response = new CANMessage();
-            byte[] retData      = new byte[6];
-            ulong  data, cmd    = 0xC2;
+            byte[] retData = new byte[6];
+            ulong data, cmd = 0xC2;
 
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x00c);
@@ -1426,7 +1430,7 @@ S9035000AC";
             }
 
             response = m_canListener.waitMessage(GeneralTimeoutmS);
-            data     = response.getData();
+            data = response.getData();
 
             for (int i = 2; i < 8; i++)
                 retData[7 - i] = (byte)(data >> i * 8);
@@ -1440,10 +1444,10 @@ S9035000AC";
         /// <returns></returns>
         public byte[] getChecksum()
         {
-            CANMessage msg      = new CANMessage(0x005, 0, 8);
+            CANMessage msg = new CANMessage(0x005, 0, 8);
             CANMessage response = new CANMessage();
-            byte[] retData      = new byte[8];
-            ulong  data, cmd    = 0xC8;
+            byte[] retData = new byte[8];
+            ulong data, cmd = 0xC8;
 
             // This is why ELM is NOT fun to work with...
             if (canUsbDevice is CANELM327Device)
@@ -1486,10 +1490,10 @@ S9035000AC";
         /// <returns></returns>
         public byte[] sendC3Command()
         {
-            CANMessage msg      = new CANMessage(0x005, 0, 8);
+            CANMessage msg = new CANMessage(0x005, 0, 8);
             CANMessage response = new CANMessage();
-            byte[] retData      = new byte[6];
-            ulong  data, cmd    = 0xC3;
+            byte[] retData = new byte[6];
+            ulong data, cmd = 0xC3;
 
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x00c);
@@ -1500,7 +1504,7 @@ S9035000AC";
             }
 
             response = m_canListener.waitMessage(GeneralTimeoutmS);
-            data     = response.getData();
+            data = response.getData();
 
             for (int i = 2; i < 8; i++)
                 retData[7 - i] = (byte)(data >> i * 8);
@@ -1516,10 +1520,10 @@ S9035000AC";
         /// <returns></returns>
         public byte[] sendFreeCommand(ulong cmd)
         {
-            CANMessage msg      = new CANMessage(0x005, 0, 8);
+            CANMessage msg = new CANMessage(0x005, 0, 8);
             CANMessage response = new CANMessage();
-            byte[] retData      = new byte[8];
-            
+            byte[] retData = new byte[8];
+
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x00c);
 
@@ -1529,7 +1533,7 @@ S9035000AC";
             }
 
             // checksum command (C8) may take longer than 1 second, so set it to 10
-            response   = m_canListener.waitMessage(ChecksumTimeoutmS); 
+            response = m_canListener.waitMessage(ChecksumTimeoutmS);
             ulong data = response.getData();
 
             for (int i = 0; i < 8; i++)
@@ -1550,9 +1554,9 @@ S9035000AC";
 
             if (canUsbDevice.isOpen())
             {
-                CANMessage msg      = new CANMessage(0x005, 0, 8);
+                CANMessage msg = new CANMessage(0x005, 0, 8);
                 CANMessage response = new CANMessage();
-                ulong data, cmd     = 0xC9;
+                ulong data, cmd = 0xC9;
 
                 msg.setData(cmd);
                 m_canListener.setupWaitMessage(0x00c);
@@ -1562,7 +1566,7 @@ S9035000AC";
                     logger.Debug("Couldn't send message");
                     return retData;
                 }
-                
+
                 /*if (!canUsbDevice.sendMessage(msg))
                     throw new Exception("Couldn't send message");
                 response = new CANMessage();
@@ -1603,11 +1607,11 @@ S9035000AC";
             // now upload all the records in the S19 bootloader file
             using (StringReader sr = new StringReader(MyBooty))
             {
-                
-                string extraInfo     = string.Empty;
-                string line          = string.Empty;
+
+                string extraInfo = string.Empty;
+                string line = string.Empty;
                 int bytestransmitted = 0;
-                int bytesread        = 0;
+                int bytesread = 0;
 
                 while ((line = sr.ReadLine()) != null)
                 {
@@ -1634,7 +1638,7 @@ S9035000AC";
                     else if (line.StartsWith("S1")) // also support S1 lines
                     {
                         //S1137090267C000060DC4E93B9F90007FFFF63B65D
-                        int len     = Convert.ToInt32(line.Substring(2, 2), 16);
+                        int len = Convert.ToInt32(line.Substring(2, 2), 16);
                         byte[] data = new byte[len - 3]; // substract address (2 bytes) and checksum (1 byte)
                         int address = Convert.ToInt32(line.Substring(4, 4), 16);
                         int framecount, bytessent;
@@ -1647,7 +1651,7 @@ S9035000AC";
                         }
 
                         framecount = 1 + (len - 3) / 7;
-                        bytessent  = 0;
+                        bytessent = 0;
                         byte[] res = sendBootloaderAddressCommand((ushort)address, (byte)(len - 3));
 
                         if ((res.Length != 8) || (res[7] != 0xA5) || (res[6] != 0x00))
@@ -1841,7 +1845,7 @@ S9035000AC";
         {
             CastInfoEvent("Erasing FLASH...", ActivityType.StartErasingFlash);
 
-            byte[] res       = sendBootLoaderEraseCommand();
+            byte[] res = sendBootLoaderEraseCommand();
             string extraInfo = string.Empty;
 
             if ((res[7] == 0xC0) && (res[6] == 0x00))
@@ -1874,10 +1878,10 @@ S9035000AC";
 
             using (StreamReader sr = new StreamReader(filename))
             {
-                string line          = string.Empty;
-                byte[] dataframe     = new byte[8];
+                string line = string.Empty;
+                byte[] dataframe = new byte[8];
                 int bytestransmitted = 0;
-                int prgs, bytesread  = 0;
+                int prgs, bytesread = 0;
                 int len, framecount;
                 int bytessent;
                 Int32 address;
@@ -1897,9 +1901,9 @@ S9035000AC";
                     }
                     else if (line.StartsWith("S2"))
                     {
-                        len         = Convert.ToInt32(line.Substring(2, 2), 16);
+                        len = Convert.ToInt32(line.Substring(2, 2), 16);
                         byte[] data = new byte[len - 4]; // substract address (3 bytes) and checksum (1 byte)
-                        address     = Convert.ToInt32(line.Substring(4, 6), 16);
+                        address = Convert.ToInt32(line.Substring(4, 6), 16);
 
                         // add flash start offset address
                         address += ((type == ECUType.T52ECU)) ? 0x60000 : 0x40000;
@@ -2006,7 +2010,7 @@ S9035000AC";
             {
                 CastInfoEvent("Start upload of new program...", ActivityType.StartFlashing);
 
-                int start     = (type == ECUType.T52ECU) ? 0x60000 : 0x40000;
+                int start = (type == ECUType.T52ECU) ? 0x60000 : 0x40000;
                 int bytesread = 0;
 
                 while ((start + bytesread) < 0x80000)
@@ -2185,8 +2189,8 @@ S9035000AC";
         /// <returns></returns>
         private int ReadMarkerAddress(string m_currentfile, int value, out int length, out string val)
         {
-            val        = string.Empty;
-            length     = 0;
+            val = string.Empty;
+            length = 0;
             int retval = 0;
 
             if (m_currentfile != string.Empty)
@@ -2296,7 +2300,7 @@ S9035000AC";
                 else if (!ChecksumT5.ValidateDump(buffer, length == 0x40000 ? true : false))
                 {
                     CastInfoEvent("It seems this dump is broken. Not saving file..", ActivityType.CalculatingChecksum);
-                    ValidDump = false;
+                    // ValidDump = false;
                 }
 
                 ExitBootloader();
@@ -2537,13 +2541,13 @@ S9035000AC";
     {
         Partnumber = 0x01,
         SoftwareID = 0x02,
-        Dataname   = 0x03, // SW Version
+        Dataname = 0x03, // SW Version
         EngineType = 0x04,
-        ImmoCode   = 0x05,
-        Unknown    = 0x06,
-        ROMend     = 0xFC, // Always 07FFFF
-        ROMoffset  = 0xFD, // T5.5 = 040000, T5.2 = 020000
-        CodeEnd    = 0xFE
+        ImmoCode = 0x05,
+        Unknown = 0x06,
+        ROMend = 0xFC, // Always 07FFFF
+        ROMoffset = 0xFD, // T5.5 = 040000, T5.2 = 020000
+        CodeEnd = 0xFE
     }
 
     public class CanInfoEventArgs : System.EventArgs
