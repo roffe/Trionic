@@ -71,7 +71,7 @@
 			<Component Id="C_NewtonsoftJson" Guid="{A1F1C6F7-8D6C-4B33-9A5F-2D6E5E8B9C21}">
 				<File Id="F_NewtonsoftJson" Name="Newtonsoft.Json.dll" KeyPath="yes" DiskId="1" Source="$(var.TrionicCANFlasher.TargetDir)" />
 			</Component>
-			<Merge Id="VCRedist" SourceFile="C:\Program Files (x86)\Common Files\Merge Modules\Microsoft_VC100_CRT_x86.msm" DiskId="1" Language="0"/>
+			<Merge Id="VCRedist" SourceFile=".\\Microsoft_VC100_CRT_x86.msm" DiskId="1" Language="0"/>
 		</DirectoryRef>
 
 
