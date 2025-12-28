@@ -42,7 +42,7 @@ jobs:
       uses: softprops/action-gh-release@v2
       if: github.ref_type == 'tag'
       env:
-        GITHUB_REPOSITORY: roffe/trionic
+        GITHUB_REPOSITORY: roffe/Trionic
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         make_latest: "true"
