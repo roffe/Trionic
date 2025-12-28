@@ -10,7 +10,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("MattiasC")]
 [assembly: AssemblyProduct("TrionicCANLib")]
-[assembly: AssemblyCopyright("Copyright © 2022 Dilemma, Mattias Claesson")]
+[assembly: AssemblyCopyright("Copyright © 2025 Dilemma, Mattias Claesson")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
