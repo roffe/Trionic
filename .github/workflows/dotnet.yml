@@ -5,9 +5,8 @@ name: .NET
 
 on:
   push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
+    tags:
+    - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
 
 jobs:
   build:
@@ -18,8 +17,28 @@ jobs:
     - uses: actions/checkout@v5
     - name: Add msbuild to PATH
       uses: microsoft/setup-msbuild@v2
+    - name: Install WiX
+      run: dotnet tool install --global wix
     - name: Setup NuGet
       uses: nuget/setup-nuget@v2
     - run: nuget restore TrionicCanFlasher.sln
     - name: Build app for release
-      run: msbuild TrionicCanFlasher.sln -t:rebuild -verbosity:diag -property:Configuration=Release
+      run: msbuild .\TrionicCANFlasher\TrionicCANFlasher.csproj -t:rebuild -property:Configuration=Release -property:Platform=x86
+    - name: Build Setup
+      run: msbuild .\SetupCANFlasher\SetupCANFlasher.wixproj -t:rebuild -property:Configuration=Release -property:Platform=x86
+
+    - name: Creating Setup Zip
+      if: startsWith(github.ref, 'refs/tags/')
+      run: 7z a TrionicCANFlasher.zip SetupCANFlasher\bin\x86\Release\TrionicCANFlasher.msi
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      if: github.ref_type == 'tag'
+      env:
+        GITHUB_REPOSITORY: roffe/trionic
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        make_latest: "true"
+        files: |
+          SetupCANFlasher\bin\x86\Release\TrionicCANFlasher.msi
+          TrionicCANFlasher.zip
