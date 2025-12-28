@@ -20,6 +20,9 @@ jobs:
       uses: actions/setup-dotnet@v5
       with:
         dotnet-version: 8.0.x
+    - name: Setup NuGet
+      uses: nuget/setup-nuget@v2
+    - run: nuget restore TrionicCanFlasher.sln
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
