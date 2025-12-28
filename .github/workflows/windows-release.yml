@@ -47,5 +47,5 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         make_latest: "true"
         files: |
-          SetupCANFlasher\bin\x86\Release\TrionicCANFlasher.msi
+          .\SetupCANFlasher\bin\x86\Release\TrionicCANFlasher.msi
           TrionicCANFlasher.zip

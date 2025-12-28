@@ -6,7 +6,7 @@
 	<?define ProductCode="{18EA27B8-6DEC-4FEA-838D-126EFC9F6AF2}"?>
 	<?define PackageCode="{8EF49AAF-4B58-4FF4-AAB7-F5DC80E94EB1}"?>
 
-	<Package Name="TrionicCANFlash" Language="1033" Version="$(var.ProductVersion)" Codepage="1252" Manufacturer="$(var.Manufacturer)" UpgradeCode="$(var.UpgradeCode)" InstallerVersion="300" ProductCode="$(var.ProductCode)">
+	<Package Name="TrionicCANFlasher" Language="1033" Version="$(var.ProductVersion)" Codepage="1252" Manufacturer="$(var.Manufacturer)" UpgradeCode="$(var.UpgradeCode)" InstallerVersion="300" ProductCode="$(var.ProductCode)">
 		<SummaryInformation Manufacturer="$(var.Manufacturer)" />
 		<MediaTemplate EmbedCab="yes" />
 
