@@ -36,7 +36,7 @@ jobs:
 
     - name: Creating Setup Zip
       if: startsWith(github.ref, 'refs/tags/')
-      run: 7z a TrionicCANFlasher.zip SetupCANFlasher\bin\x86\Release\TrionicCANFlasher.msi
+      run: 7z a TrionicCANFlasher.zip .\SetupCANFlasher\bin\x86\Release\TrionicCANFlasher.msi
 
     - name: Release
       uses: softprops/action-gh-release@v2
