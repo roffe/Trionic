@@ -186,11 +186,14 @@
             "115200",
             "230400",
             "1Mbit",
-            "2Mbit"});
+            "2Mbit",
+            "3Mbit",
+            });
             this.cbxComSpeed.Location = new System.Drawing.Point(194, 65);
             this.cbxComSpeed.Name = "cbxComSpeed";
             this.cbxComSpeed.Size = new System.Drawing.Size(150, 21);
             this.cbxComSpeed.TabIndex = 81;
+            //this.cbxComSpeed.SelectedIndexChanged += new System.EventHandler(this.cbxComSpeed_SelectedIndexChanged);
             // 
             // AdapterLabel
             // 

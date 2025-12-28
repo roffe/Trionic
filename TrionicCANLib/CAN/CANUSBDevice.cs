@@ -20,8 +20,8 @@ namespace TrionicCANLib.CAN
     /// 
     public class CANUSBDevice : ICANDevice
     {
-        public const string CAN_BAUD_BTR_33K  = "0x8B:0x2F"; //  33,333 kbit/s SAAB GMLAN
-        public const string CAN_BAUD_BTR_47K  = "0xcb:0x9a"; //  47,619 kbit/s SAAB T7 I-bus
+        public const string CAN_BAUD_BTR_33K = "0x8B:0x2F"; //  33,333 kbit/s SAAB GMLAN
+        public const string CAN_BAUD_BTR_47K = "0xcb:0x9a"; //  47,619 kbit/s SAAB T7 I-bus
         public const string CAN_BAUD_BTR_615K = "0x40:0x37"; // 615,384 kbit/s SAAB Trionic 5 P-bus (69% Sampling)
 
         static uint m_deviceHandle = 0;
@@ -355,7 +355,7 @@ namespace TrionicCANLib.CAN
                 readResult = Lawicel.CANUSB.canusb_Read(m_deviceHandle, out r_canMsg);
                 if (readResult == Lawicel.CANUSB.ERROR_CANUSB_OK)
                 {
-                    Thread.Sleep(1);
+                    //Thread.Sleep(1);
                     logger.Trace("rx: 0x" + r_canMsg.id.ToString("X3") + r_canMsg.data.ToString("X16"));
                     if (r_canMsg.id == 0x00)
                     {

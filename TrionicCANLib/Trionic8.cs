@@ -46,19 +46,19 @@ namespace TrionicCANLib.API
 
         public AccessLevel SecurityLevel
         {
-            get { return _securityLevel;  }
+            get { return _securityLevel; }
             set { _securityLevel = value; }
         }
 
         public bool FormatBootPartition
         {
-            get { return formatBootPartition;  }
+            get { return formatBootPartition; }
             set { formatBootPartition = value; }
         }
 
         public bool FormatSystemPartitions
         {
-            get { return formatSystemPartitions;  }
+            get { return formatSystemPartitions; }
             set { formatSystemPartitions = value; }
         }
 
@@ -323,7 +323,7 @@ namespace TrionicCANLib.API
             {
                 cmd = 0x0000000000FB2702; // request security access
             }
-            CANMessage msg = new CANMessage(0x7E0, 0, 3); 
+            CANMessage msg = new CANMessage(0x7E0, 0, 3);
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x7E8);
             CastInfoEvent("Requesting security access", ActivityType.ConvertingFile);
@@ -919,7 +919,7 @@ namespace TrionicCANLib.API
                 ulong cmd = 0x00000000003B00 | _pid << 16;
                 cmd |= (2 + (ulong)write.Length);
                 CANMessage msg = new CANMessage(0x7E0, 0, 8);
-                
+
                 for (int i = 0; i < write.Length; i++)
                 {
                     cmd = AddByteToCommand(cmd, write[i], i + 3);
@@ -1158,7 +1158,7 @@ namespace TrionicCANLib.API
 
             //ulong cmd = 0x0000000000023B04;
             //0000008C0A023B04 example  0A8C = 2700
-            
+
             retval = WriteECUInfo(0x02, write);
             // Persist 
             RequestSecurityAccess(0);
@@ -1312,7 +1312,7 @@ namespace TrionicCANLib.API
             GetDiagnosticDataIdentifier();
 
             // ReadDataByPacketIdentifier ($AA) Service
-            CANMessage msg = new CANMessage(0x7E0, 0, 4); 
+            CANMessage msg = new CANMessage(0x7E0, 0, 4);
             ulong cmd = 0x000000007A01AA03;// <dpid=7A> <level=sendOneResponse> <service=AA> <length>
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x7E8, 0x5E8);
@@ -1474,7 +1474,7 @@ namespace TrionicCANLib.API
             }
 
             retval = ProgramVIN(vin);
-            
+
             Thread.Sleep(200);
 
             // Persist 
@@ -1502,7 +1502,7 @@ namespace TrionicCANLib.API
             tankType = TankType.EU;
             clutchStart = false;
             byte[] data = RequestECUInfo(0x01);
-            
+
             if (data.Length >= 2)
             {
                 if (data[0] == 0x00 && data[1] == 0x00) return false;
@@ -1560,7 +1560,7 @@ namespace TrionicCANLib.API
                 // high= -01-----
                 // low = -10-----
                 highoutput = BitTools.GetBit(data[1], 5) && !BitTools.GetBit(data[1], 6) ? true : false;
-                
+
                 for (int i = 0; i < data.Length; i++)
                 {
                     raw += "0x" + data[i].ToString("X2") + " ";
@@ -1634,7 +1634,7 @@ namespace TrionicCANLib.API
             // off= ---01---
             data[1] = BitTools.SetBit(data[1], 3, !sai);
             data[1] = BitTools.SetBit(data[1], 4, sai);
-            
+
             // high= -01-----
             // low = -10-----
             data[1] = BitTools.SetBit(data[1], 5, highoutput);
@@ -1885,7 +1885,7 @@ namespace TrionicCANLib.API
 
         private bool requestDownload(bool z22se)
         {
-            CANMessage msg = new CANMessage(0x7E0, 0, 7);   
+            CANMessage msg = new CANMessage(0x7E0, 0, 7);
             ulong cmd = 0x0000000000003400;
             if (z22se)
                 cmd += 5;
@@ -1913,7 +1913,7 @@ namespace TrionicCANLib.API
 
         private bool Send0120()
         {
-            CANMessage msg = new CANMessage(0x7E0, 0, 2); 
+            CANMessage msg = new CANMessage(0x7E0, 0, 2);
             ulong cmd = 0x0000000000002001;
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x7E8);
@@ -2089,7 +2089,7 @@ namespace TrionicCANLib.API
 
         private bool SendA5()
         {
-            CANMessage msg = new CANMessage(0x7E0, 0, 3);   
+            CANMessage msg = new CANMessage(0x7E0, 0, 3);
             ulong cmd = 0x000000000001A502; // 0x02 0x10 0x02
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x7E8);
@@ -2349,7 +2349,7 @@ namespace TrionicCANLib.API
 
         private bool SendA5011()
         {
-            CANMessage msg = new CANMessage(0x11, 0, 3);   
+            CANMessage msg = new CANMessage(0x11, 0, 3);
             ulong cmd = 0x000000000001A502; // 0x02 0x10 0x02
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x311);
@@ -2395,7 +2395,7 @@ namespace TrionicCANLib.API
             {
                 cmd = 0x0000000000FB2702; // request security access
             }
-            CANMessage msg = new CANMessage(0x11, 0, 3); 
+            CANMessage msg = new CANMessage(0x11, 0, 3);
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x311);
             CastInfoEvent("Requesting security access", ActivityType.ConvertingFile);
@@ -2489,7 +2489,7 @@ namespace TrionicCANLib.API
 
         private bool requestDownload011()
         {
-            CANMessage msg = new CANMessage(0x11, 0, 7);   
+            CANMessage msg = new CANMessage(0x11, 0, 7);
             ulong cmd = 0x0000000000003406;
             msg.setData(cmd);
             m_canListener.setupWaitMessage(0x311);
@@ -2676,7 +2676,7 @@ namespace TrionicCANLib.API
                  Thread.Sleep(1000);
              }*/
 
-        CANMessage response = new CANMessage();
+            CANMessage response = new CANMessage();
             ulong data = 0;
             // first send 
             CANMessage msg = new CANMessage(0x7E0, 0, 7);
@@ -2794,7 +2794,7 @@ namespace TrionicCANLib.API
         {
             BackgroundWorker bw = sender as BackgroundWorker;
             string filename = (string)workEvent.Argument;
-        
+
             bool result = false;
             int retryCount = 0;
             int startAddress = 0x100000;
@@ -3030,7 +3030,7 @@ namespace TrionicCANLib.API
 
                     Blockstoskip = getCanData(data, 3);
 
-                    logger.Debug("Skipping: " + (length*Blockstoskip).ToString() + " bytes");
+                    logger.Debug("Skipping: " + (length * Blockstoskip).ToString() + " bytes");
                     return retData;
                 }
             }
@@ -3338,7 +3338,7 @@ namespace TrionicCANLib.API
                     }
 
                     ExtraFrameCount = (toReceive - 6) / 7;
-                    if (((toReceive - 6) % 7) > 0)  ExtraFrameCount++;
+                    if (((toReceive - 6) % 7) > 0) ExtraFrameCount++;
                 }
                 // Single-frame
                 else if ((data & 0xff) < 8 && (data & 0xff) > 4)
@@ -3382,7 +3382,7 @@ namespace TrionicCANLib.API
                 // Actively refused by ECU
                 else if ((data & 0xff) == 0x7f)
                 {
-                    logger.Debug("readMemoryByAddress failed with " + TranslateErrorCode((byte)((uint)data>>16)));
+                    logger.Debug("readMemoryByAddress failed with " + TranslateErrorCode((byte)((uint)data >> 16)));
                     return null;
                 }
 
@@ -4017,9 +4017,9 @@ namespace TrionicCANLib.API
             for (int i = 0; i < buffer.Length; i += 6)
             {
                 buffer[i] = 0x80;
-                buffer[i+1] = buffer[i+2] = buffer[i+3] = 0;
-                buffer[i+4] = (byte)(dynList[i/6] >> 8);
-                buffer[i+5] = (byte)(dynList[i/6]);
+                buffer[i + 1] = buffer[i + 2] = buffer[i + 3] = 0;
+                buffer[i + 4] = (byte)(dynList[i / 6] >> 8);
+                buffer[i + 5] = (byte)(dynList[i / 6]);
             }
 
             atResetDynList();
@@ -4174,7 +4174,7 @@ namespace TrionicCANLib.API
                 return false;
             }
 
-            
+
             CANMessage response = m_canListener.waitMessage(timeoutP2ct);
             ulong data = response.getData();
 
@@ -4230,11 +4230,11 @@ namespace TrionicCANLib.API
             for (int i = 0; i < buffer.Length; i += 6)
             {
                 buffer[i] = 0x03;
-                buffer[i+1] = 0;
-                buffer[i+2] = dynList[i/6].size;
-                buffer[i+3] = (byte)(dynList[i/6].address >> 16);
-                buffer[i+4] = (byte)(dynList[i/6].address >> 8);
-                buffer[i+5] = (byte)(dynList[i/6].address);
+                buffer[i + 1] = 0;
+                buffer[i + 2] = dynList[i / 6].size;
+                buffer[i + 3] = (byte)(dynList[i / 6].address >> 16);
+                buffer[i + 4] = (byte)(dynList[i / 6].address >> 8);
+                buffer[i + 5] = (byte)(dynList[i / 6].address);
             }
 
             atResetDynList();
@@ -4755,7 +4755,7 @@ namespace TrionicCANLib.API
                 }
             }
             // RequestCorrectlyReceived-ResponsePending ($78, RC_RCR-RP)
-            else if (response.getCanData(1) == 0x7F && response.getCanData(2) == 0xA9 && response.getCanData(3) == 0x78) 
+            else if (response.getCanData(1) == 0x7F && response.getCanData(2) == 0xA9 && response.getCanData(3) == 0x78)
             {
                 logger.Debug("RequestCorrectlyReceived-ResponsePending", ActivityType.UploadingFlash);
                 // Now wait for all DTCs
@@ -5480,7 +5480,7 @@ namespace TrionicCANLib.API
 
                 rxdata = m_canListener.waitMessage(timeoutP2ct).getData();
                 // RequestCorrectlyReceived-ResponsePending ($78, RC_RCR-RP)
-                if (getCanData(rxdata, 1) == 0x7F && getCanData(rxdata, 2) == 0x3B && getCanData(rxdata, 3) == 0x78) 
+                if (getCanData(rxdata, 1) == 0x7F && getCanData(rxdata, 2) == 0x3B && getCanData(rxdata, 3) == 0x78)
                 {
                     // wait for ack
                     //0000000000907B02
@@ -5740,7 +5740,7 @@ namespace TrionicCANLib.API
             }
             return true;
         }
-       
+
         private bool UploadBootloaderWrite()
         {
             int startAddress = 0x102400;
@@ -6020,7 +6020,7 @@ namespace TrionicCANLib.API
                                 CastInfoEvent("Erasing FLASH", ActivityType.StartErasingFlash);
                             }
 
-                            
+
                             if (SendrequestDownload(6, true, LegionMode))
                             {
                                 _needRecovery = true;
@@ -6333,7 +6333,7 @@ namespace TrionicCANLib.API
             SendKeepAlive();
             _securityLevel = AccessLevel.AccessLevel01;
             CastInfoEvent("Requesting security access", ActivityType.UploadingBootloader);
-            if(!RequestSecurityAccess(0))
+            if (!RequestSecurityAccess(0))
                 return;
             Thread.Sleep(50);
 
@@ -6378,7 +6378,7 @@ namespace TrionicCANLib.API
             //10 82 61 80 00 10 0C 00 // 4 bytes data already
 
             while (startAddress < lastAddress)
-                {
+            {
                 if (!canUsbDevice.isOpen())
                 {
                     _stallKeepAlive = false;
@@ -6616,12 +6616,13 @@ namespace TrionicCANLib.API
                         else
                         {
                             // Avoid confusion; Don't show the response if it's 1
-                            if (formatbuf[3] > 1) {
+                            if (formatbuf[3] > 1)
+                            {
 
                                 eraseCount++;
                                 string info = "";
                                 for (int i = 0; i < eraseCount; i++) info += ".";
-                                if((eraseCount&3)==2)
+                                if ((eraseCount & 3) == 2)
                                     CastInfoEvent(info, ActivityType.ErasingFlash);
 
                             }
@@ -6650,7 +6651,7 @@ namespace TrionicCANLib.API
                         CastInfoEvent("Erase failed; No response", ActivityType.ErasingFlash);
                         return false;
                     }
-                    
+
                 }
                 Thread.Sleep(m_sleepTime);
             }
@@ -6797,7 +6798,7 @@ namespace TrionicCANLib.API
                             buf[bufpnt++] = readbuf[j];
                         }
                     }
-                    int percentage = (int)((float)100*(bufpnt-start) / (float)range);
+                    int percentage = (int)((float)100 * (bufpnt - start) / (float)range);
                     if (percentage > saved_progress)
                     {
                         CastProgressReadEvent(percentage);
@@ -7338,7 +7339,7 @@ namespace TrionicCANLib.API
                 sw.Stop();
 
                 startAddress += blockSize;
-                
+
                 // Handle gaps
                 if (bufpnt == 0x1C0000)
                 {
@@ -7360,7 +7361,7 @@ namespace TrionicCANLib.API
             return true;
         }
 
-        private bool SendTransferDataME96(int length, int address, uint waitforResponseID, byte firstByteToSend )
+        private bool SendTransferDataME96(int length, int address, uint waitforResponseID, byte firstByteToSend)
         {
             bool result = false;
 
@@ -7372,7 +7373,7 @@ namespace TrionicCANLib.API
             ulong addressMiddle = (uint)address & 0x000000000000FF00;
             addressMiddle /= 0x100;
             ulong addressLow = (uint)address & 0x00000000000000FF;
-            
+
             ulong total = (ulong)length + 5;  // The extra 5 comes from the Service ID plus the sub-function parameter byte plus the 3 byte startingAddress.
             ulong lenLow = total & 0xFF;
             ulong lenHigh = (total & 0xF00) >> 8;
@@ -7401,7 +7402,7 @@ namespace TrionicCANLib.API
             while (true)
             {
                 logger.Debug("Received in SendTransferData: " + data.ToString("X16"));
-                
+
                 // RequestCorrectlyReceived-ResponsePending ($78, RC_RCR-RP)
                 if (getCanData(data, 0) == 0x03 && getCanData(data, 1) == 0x7F && getCanData(data, 2) == 0x36 && getCanData(data, 3) == 0x78)
                 {
@@ -7547,7 +7548,7 @@ namespace TrionicCANLib.API
 
         private bool SendRestoreT8()
         {
-            CANMessage msg = new CANMessage(0x7E0, 0, 3); 
+            CANMessage msg = new CANMessage(0x7E0, 0, 3);
             // 02 1A 79 00 00 00 00 00
             ulong cmd = 0x0000000000791A02;
             msg.setData(cmd);
@@ -7675,7 +7676,7 @@ namespace TrionicCANLib.API
             }
             return true;
         }
-        
+
 
         // Send a magic message to check if the loader is alive
         private bool LegionPing()
@@ -7702,7 +7703,7 @@ namespace TrionicCANLib.API
 
             return false;
         }
-        
+
         private bool StartCommon(byte Device, bool z22se)
         {
             bool LegionIsAlive = false;
@@ -7806,7 +7807,7 @@ namespace TrionicCANLib.API
 
             if (LegionOptions.InterframeDelay != 1200)
             {
-                CastInfoEvent(("Setting inter-frame delays to: " + LegionOptions.InterframeDelay.ToString("D") + " micrsoec"), ActivityType.UploadingBootloader);
+                CastInfoEvent(("Setting inter-frame delays to: " + LegionOptions.InterframeDelay.ToString("D") + " microsec"), ActivityType.UploadingBootloader);
             }
 
             LegionIDemand(0, LegionOptions.InterframeDelay, out success);
@@ -7816,42 +7817,42 @@ namespace TrionicCANLib.API
                 return false;
             }
 
- /*         CastInfoEvent("Reading battery voltage..", ActivityType.UploadingBootloader);
-            byte[] pin = LegionIDemand(6, 11, out success);
-            float Val1 = 11;
-            float Val2 = 11;
+            /*         CastInfoEvent("Reading battery voltage..", ActivityType.UploadingBootloader);
+                       byte[] pin = LegionIDemand(6, 11, out success);
+                       float Val1 = 11;
+                       float Val2 = 11;
 
-            if (success)
-            {
-                Val1 = ((pin[0] << 8 | pin[1]) & 0x3FF) / (float)72.00;
-                pin = LegionIDemand(6, 13, out success);
-            }
+                       if (success)
+                       {
+                           Val1 = ((pin[0] << 8 | pin[1]) & 0x3FF) / (float)72.00;
+                           pin = LegionIDemand(6, 13, out success);
+                       }
 
-            if (success)
-            {
-                Val2 = ((pin[0] << 8 | pin[1]) & 0x3FF) / (float)72.00;
-                Val1 = Val1 > Val2 ? Val1 : Val2; // Only care about the highest reading
+                       if (success)
+                       {
+                           Val2 = ((pin[0] << 8 | pin[1]) & 0x3FF) / (float)72.00;
+                           Val1 = Val1 > Val2 ? Val1 : Val2; // Only care about the highest reading
 
-                CastInfoEvent(("Battery: " + Val1.ToString("F") + " V"), ActivityType.UploadingBootloader);
-                if (Val1 < 11.0)
-                {
-                    DialogResult result = DialogResult.No;
+                           CastInfoEvent(("Battery: " + Val1.ToString("F") + " V"), ActivityType.UploadingBootloader);
+                           if (Val1 < 11.0)
+                           {
+                               DialogResult result = DialogResult.No;
 
-                    result = MessageBox.Show("Your battery voltage is rather low.\nAre you sure you want to continue?",
-                        "You have been warned", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                               result = MessageBox.Show("Your battery voltage is rather low.\nAre you sure you want to continue?",
+                                   "You have been warned", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
 
-                    if (result == DialogResult.No)
-                    {
-                        CastInfoEvent("Aborting", ActivityType.UploadingBootloader);
-                        LegionRequestexit();
-                        return false;
-                    }
-                }
-            }
-            else
-            {
-                CastInfoEvent("Coult not read battery voltage", ActivityType.UploadingBootloader);
-            }*/
+                               if (result == DialogResult.No)
+                               {
+                                   CastInfoEvent("Aborting", ActivityType.UploadingBootloader);
+                                   LegionRequestexit();
+                                   return false;
+                               }
+                           }
+                       }
+                       else
+                       {
+                           CastInfoEvent("Coult not read battery voltage", ActivityType.UploadingBootloader);
+                       }*/
 
             // Start the secondary bootloader
             if (Device == EcuByte_MCP)
@@ -7861,7 +7862,7 @@ namespace TrionicCANLib.API
                 return success;
             }
             return true;
-       }
+        }
 
         // Partition bitmask
         private uint formatmask;
@@ -8001,7 +8002,7 @@ namespace TrionicCANLib.API
 
                 if (success)
                 {
-                    for (int i = 0; i < 10; i ++)
+                    for (int i = 0; i < 10; i++)
                     {
                         Resp2[i] = resp2[0xC + i];
                     }
@@ -8055,7 +8056,7 @@ namespace TrionicCANLib.API
 
             // command 05: Marry secondary processor
             // wish: None, just wish.        
-            
+
             // Command 06: Read ADC pin
             // whish: Which pin to read.
 
@@ -8065,7 +8066,7 @@ namespace TrionicCANLib.API
 
             CANMessage msg = new CANMessage(0x7E0, 0, 8);
             // Do some byteswapping
-            ulong privatewish = ((wish & 0xff) << 24 | ((wish >> 8) & 0xff) << 16  );
+            ulong privatewish = ((wish & 0xff) << 24 | ((wish >> 8) & 0xff) << 16);
             // Use ProgrammingMode as carrier 
             ulong cmd = (privatewish) << 32 | (command & 0xff) << 16 | 0xA502;
 
@@ -8089,10 +8090,10 @@ namespace TrionicCANLib.API
 
                 // elm327 strikes yet again; It has a fixed length for certain commands.
                 // The loader will respond with something "slightly" out of spec to circumvent this.
-                if (getCanData(data, 0) != 0x33 || getCanData(data, 1) != 0x55 || getCanData(data, 2) != (command & 0xFF) )
+                if (getCanData(data, 0) != 0x33 || getCanData(data, 1) != 0x55 || getCanData(data, 2) != (command & 0xFF))
                 {
                     CastInfoEvent("Retrying bootloader command..", ActivityType.DownloadingFlash);
-                    logger.Debug(("(Legion) Retrying cmd " + command.ToString("X8") + " Wish "   + wish.ToString("X8")));
+                    logger.Debug(("(Legion) Retrying cmd " + command.ToString("X8") + " Wish " + wish.ToString("X8")));
                     Retries++;
                 }
                 else
@@ -8106,10 +8107,10 @@ namespace TrionicCANLib.API
 
                     // Checksum32; complete
                     if (command == 1 && getCanData(data, 3) == 1)
-                    {   
+                    {
                         success = true;
                         for (uint i = 0; i < 4; i++)
-                            buf[i] = getCanData(data, 4+i);
+                            buf[i] = getCanData(data, 4 + i);
 
                         return buf;
                     }
@@ -8237,7 +8238,7 @@ namespace TrionicCANLib.API
             return true;
         }
 
-        private byte[,] Partitionhashes = new byte[9,16];
+        private byte[,] Partitionhashes = new byte[9, 16];
 
         /// <summary>
         /// Fetch md5 of all partitions and store them in a local array
@@ -8281,8 +8282,8 @@ namespace TrionicCANLib.API
             bm.SetFilename(filename);
 
             byte toerase = 0;
-            byte start   = 5;
-            formatmask   = 0;
+            byte start = 5;
+            formatmask = 0;
 
             // Determine where to start by checking current device and selected regions
             if ((formatBootPartition && formatSystemPartitions) || z22se)
@@ -8298,7 +8299,7 @@ namespace TrionicCANLib.API
 
                 // Fetch partition md5
                 byte[] Locmd5dbuf = bm.GetPartitionmd5(device, i);
-                
+
                 // Compare both md5's
                 for (byte a = 0; a < 16; a++)
                 {
@@ -8392,19 +8393,19 @@ namespace TrionicCANLib.API
 
             for (byte i = 1; i <= lastPartition; i++)
             {
-                uint shift = (uint)(1 << (i -1));
+                uint shift = (uint)(1 << (i - 1));
                 bool Identical = true;
 
                 // Fetch md5 from both locations
-                byte[] RemoteMD = LegionIDemand(device == EcuByte_MCP ? (uint) 3 : 2, (uint) i, out success);
-                byte[] LocalMD  = bm.GetPartitionmd5(device, i);
+                byte[] RemoteMD = LegionIDemand(device == EcuByte_MCP ? (uint)3 : 2, (uint)i, out success);
+                byte[] LocalMD = bm.GetPartitionmd5(device, i);
 
                 // Could not fetch remote md5; Abort!
                 if (!success)
                     return false;
 
                 // Verify written data.
-                if (((formatmask >> (i-1)) & 1) > 0)
+                if (((formatmask >> (i - 1)) & 1) > 0)
                 {
                     for (byte a = 0; a < 16; a++)
                     {
@@ -8588,7 +8589,7 @@ namespace TrionicCANLib.API
             BackgroundWorker bw = sender as BackgroundWorker;
             string filename = (string)workEvent.Argument;
             _stallKeepAlive = true;
-            _needRecovery   = false;
+            _needRecovery = false;
             BlockManager bm = new BlockManager();
             bm.SetFilename(filename);
 
@@ -8647,7 +8648,7 @@ namespace TrionicCANLib.API
                         if (formatmask == 0)
                         {
                             // It won't touch md5 on z22s
-                            if(MarryMCP(z22se))
+                            if (MarryMCP(z22se))
                                 CastInfoEvent("FLASH upload completed and verified", ActivityType.FinishedFlashing);
                             else
                                 for (int i = 0; i < 5; i++)
@@ -8730,7 +8731,7 @@ namespace TrionicCANLib.API
             // MCP
             else if (device == EcuByte_MCP)
                 part = (address >> 15) & 0xF;
-            
+
             // Read one bit from selected part of the format mask to figure out if this partition should be written or not.
             return ((formatmask >> part) & 1) > 0 ? true : false;
         }
@@ -8740,7 +8741,7 @@ namespace TrionicCANLib.API
             const int startAddress = 0x000000;
 
             // The mcp part of legion can not handle writes to other than 64-byte boundaries, use hardcoded values to make sure that rule is followed 
-            int lastBlockNumber = (End / 0x80)-1; 
+            int lastBlockNumber = (End / 0x80) - 1;
             int saved_progress = 0;
             int length = 0x88; // 128 bytes plus dreq, param and checksum (We have 6 free bytes in the last package anyway)
             int numberOfFrames = 19;
@@ -8756,7 +8757,7 @@ namespace TrionicCANLib.API
             while (blockNumber <= lastBlockNumber)
             {
                 int percentage = (int)(((float)blockNumber * 100) / (float)lastBlockNumber);
-                if (percentage > saved_progress || percentage==0)
+                if (percentage > saved_progress || percentage == 0)
                 {
                     CastProgressWriteEvent(percentage);
                     saved_progress = percentage;
@@ -8766,14 +8767,14 @@ namespace TrionicCANLib.API
                 Problem = false;
 
                 int currentAddress = startAddress + (blockNumber * 0x80);
-                byte[] data2Send  = bm.GetCurrentBlock_128(blockNumber, byteswapped);
-                
+                byte[] data2Send = bm.GetCurrentBlock_128(blockNumber, byteswapped);
+
                 // Calculate checksum-16 of frame-data and add it to the frame.
                 int Csum16 = 0;
 
                 for (int i = 0; i < (length - 8); i++)
                     Csum16 += data2Send[i];
-                
+
                 data2Send[length - 8] = (byte)(Csum16 >> 8 & 0xff);
                 data2Send[length - 7] = (byte)(Csum16 & 0xff);
 
@@ -8828,7 +8829,7 @@ namespace TrionicCANLib.API
                                 }
                                 else
                                     CastInfoEvent("Dropped frame. Retrying..", ActivityType.UploadingFlash);
- 
+
                                 Problem = true;
                             }
                             else
@@ -8980,7 +8981,7 @@ namespace TrionicCANLib.API
 
                         // Prepare to run even slower
                         Fallback += 500;
-                        Dropped   =   0;
+                        Dropped = 0;
                     }
                 }
             }
@@ -8996,7 +8997,7 @@ namespace TrionicCANLib.API
 
                     CastInfoEvent("Verifying md5..", ActivityType.ConvertingFile);
                     byte[] Locmd5buf = md5.ComputeHash(buf);
-                    byte[] Remd5dbuf = LegionIDemand(Device == EcuByte_MCP ? (uint) 3 : 2, 0, out success);
+                    byte[] Remd5dbuf = LegionIDemand(Device == EcuByte_MCP ? (uint)3 : 2, 0, out success);
 
                     if (success)
                     {
@@ -9078,7 +9079,7 @@ namespace TrionicCANLib.API
             foreach (var kvp in read)
             {
                 if (kvp.Key != 0x5D
-                    && kvp.Key != 0x73 && kvp.Key != 0x74 && kvp.Key != 0x76 && kvp.Key != 0x7A 
+                    && kvp.Key != 0x73 && kvp.Key != 0x74 && kvp.Key != 0x76 && kvp.Key != 0x7A
                     && kvp.Key != 0x92 && kvp.Key != 0x96 && kvp.Key != 0x98 && kvp.Key != 0x9A
                     && kvp.Key != 0xB0
                     && kvp.Key != 0xB4 // serial number! Error, case 0x12: "subFunction not supported - invalid format";

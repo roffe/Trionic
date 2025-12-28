@@ -93,10 +93,7 @@ namespace TrionicCANLib.CAN
 
         public void CastInformationEvent(string info)
         {
-            if (onReceivedAdditionalInformation != null)
-            {
-                onReceivedAdditionalInformation(this, new InformationEventArgs(info));
-            }
+            onReceivedAdditionalInformation?.Invoke(this, new InformationEventArgs(info));
         }
 
         private bool m_OnlyPBus = true;

@@ -681,33 +681,25 @@ namespace TrionicCANFlasher
                 cbxAdapterItem.Enabled = false;
                 AdapterLabel.Enabled = false;
 
-                if (typeindex == (int)CANBusAdapter.LAWICEL ||
-                    typeindex == (int)CANBusAdapter.KVASER  ||
-                    typeindex == (int)CANBusAdapter.J2534)
+                switch (typeindex)
                 {
-                    cbxAdapterItem.Enabled = true;
-                    AdapterLabel.Enabled = true;
-                }
-
-                if (typeindex == (int)CANBusAdapter.SLCAN)
-                {
-                    cbxAdapterItem.Enabled = true;
-                    AdapterLabel.Enabled = true;
-                    ComBaudLabel.Enabled = true;
-                    cbxComSpeed.Enabled = false;
-                }
-
-                if (typeindex == (int)CANBusAdapter.ELM327)
-                {
-                    cbxAdapterItem.Enabled = true;
-                    AdapterLabel.Enabled = true;
-                    ComBaudLabel.Enabled = true;
-                    cbxComSpeed.Enabled = true;
-                }
-                else
-                {
-                    ComBaudLabel.Enabled = false;
-                    cbxComSpeed.Enabled = false;
+                    case (int)CANBusAdapter.LAWICEL:
+                    case (int)CANBusAdapter.KVASER:
+                    case (int)CANBusAdapter.J2534:
+                        cbxAdapterItem.Enabled = true;
+                        AdapterLabel.Enabled = true;
+                        break;
+                    case (int)CANBusAdapter.ELM327:
+                    case (int)CANBusAdapter.SLCAN:
+                        cbxAdapterItem.Enabled = true;
+                        AdapterLabel.Enabled = true;
+                        ComBaudLabel.Enabled = true;
+                        cbxComSpeed.Enabled = true;
+                        break;
+                    default:
+                        ComBaudLabel.Enabled = false;
+                        cbxComSpeed.Enabled = false;
+                        break;
                 }
 
                 if (typeindex >= 0)

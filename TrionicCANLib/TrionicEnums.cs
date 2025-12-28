@@ -89,7 +89,8 @@ namespace TrionicCANLib.API
         S115200,
         S230400,
         S1Mbit,
-        S2Mbit
+        S2Mbit,
+        S3Mbit
     };
 
     public enum Latency : int

@@ -12,13 +12,12 @@ namespace TrionicCANLib.API
 {
     public class Trionic7 : ITrionic
     {
-        static public List<uint> FilterIdECU = new List<uint> { 0x258, 0x238,
-                                                                0x220, 0x240, 0x266 }; // Certain adapters applies filter and mask to outgoing messages too
+        static public List<uint> FilterIdECU = new List<uint> { 0x258, 0x238, 0x220, 0x240, 0x266 }; // Certain adapters applies filter and mask to outgoing messages too
 
         private IKWPDevice kwpDevice;
         private KWPHandler kwpHandler;
         private IFlasher flash;
-        private Logger logger = LogManager.GetCurrentClassLogger();
+        private readonly Logger logger = LogManager.GetCurrentClassLogger();
 
         private bool m_UseFlasherOnDevice = false;
 
@@ -591,10 +590,10 @@ namespace TrionicCANLib.API
                 if (KWPHandler.getInstance().sendReadRequest((uint)(sramaddress), (uint)length, out data))
                 {
                     Thread.Sleep(0); //<GS-11022010>
-                     _success = true;
+                    _success = true;
                 }
             }
-            
+
             catch (Exception E)
             {
                 logger.Debug("Failed to read memory: " + E.Message);

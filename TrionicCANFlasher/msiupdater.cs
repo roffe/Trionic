@@ -98,7 +98,7 @@ namespace CommonSuite
             private bool _UpdateAvailable;
             private bool _Version2High;
             private Version _Version;
-            private string _xmlFile;
+            // private string _xmlFile;
 
 
             private string _msiFile;
@@ -231,7 +231,7 @@ namespace CommonSuite
 
         private void updatecheck()
         {
-            string releaseInfo="";
+            string releaseInfo = "";
             bool m_updateavailable = false;
             bool m_version_toohigh = false;
             Version maxversion = new Version("0.0.0.0");
@@ -243,7 +243,7 @@ namespace CommonSuite
                 JObject release = JObject.Parse(releaseInfo);
 
                 string tag_name = (string)release["tag_name"]; // "TrionicCanFlasher_v0.1.72.0"
-                int index = tag_name.IndexOf("_v", 0, tag_name.Length-1, StringComparison.CurrentCulture);
+                int index = tag_name.IndexOf("_v", 0, tag_name.Length - 1, StringComparison.CurrentCulture);
                 Version v = new Version(tag_name.Substring(index + 2));
                 if (v > m_currentversion)
                 {
@@ -265,11 +265,12 @@ namespace CommonSuite
                 foreach (JToken result in results)
                 {
                     ReleaseAsset searchResult = result.ToObject<ReleaseAsset>();
-                    if (searchResult.browser_download_url.Contains("msi")) {
+                    if (searchResult.browser_download_url.Contains("msi"))
+                    {
                         msiFile = searchResult.browser_download_url;
                     }
                 }
-                
+
                 if (m_updateavailable)
                 {
                     PumpString("A newer version is available: " + maxversion.ToString(), m_updateavailable, m_version_toohigh, v, msiFile);
@@ -289,7 +290,7 @@ namespace CommonSuite
             {
                 PumpString(tuE.Message, false, false, new Version(), "");
             }
-            
+
         }
     }
 }

@@ -59,7 +59,7 @@ namespace TrionicCANLib.CAN
         }
 
         public SLCANDevice()
-        { 
+        {
         }
 
         ~SLCANDevice()
@@ -171,7 +171,7 @@ namespace TrionicCANLib.CAN
                 {
                     m_serialPort.Close();
                 }
-                    
+
                 m_serialPort.PortName = m_forcedComport;
 
                 try
@@ -187,7 +187,7 @@ namespace TrionicCANLib.CAN
 
                 if (!UseOnlyPBus && TrionicECU != ECU.TRIONIC5)
                 {
-                    m_serialPort.Write("S0\r");         // Set Just4trionic CAN speed to 47,619 bits (I-BUS)
+                    m_serialPort.Write("S0\r");         // Set CAN speed to 47,619 bits (I-BUS)
                     Thread.Sleep(10);
                     Flush();                       // Flush 'junk' in serial port buffers
 
@@ -223,16 +223,17 @@ namespace TrionicCANLib.CAN
                 }
                 else
                 {
-                    m_serialPort.Write("S6\r");         // Set CAN speed to 500,000 kbits (P-BUS)
+                    m_serialPort.Write("S6\r"); // Set CAN speed to 500,000 kbits (P-BUS)
                     logger.Debug("Connected to CAN at 500,000 kbits speed");
                 }
 
-                Thread.Sleep(10);
-                Flush();                       // Flush 'junk' in serial port buffers
+                Thread.Sleep(5);
+                Flush(); // Flush 'junk' in serial port buffers
 
                 try
                 {
-                    CastInformationEvent("Connected to CAN P-BUS using " + m_forcedComport);
+                    //m_serialPort.ReadTo("\r");
+                    CastInformationEvent("Connected to CAN P-BUS using " + m_forcedComport + " @ " + m_forcedBaudrate + "bps");
 
                     if (m_readThread != null)
                     {
@@ -245,7 +246,7 @@ namespace TrionicCANLib.CAN
                     if (m_readThread.ThreadState == ThreadState.Unstarted)
                         m_readThread.Start();
 
-                    m_serialPort.Write("O\r");          // 'open'
+                    m_serialPort.Write("O\r"); // 'open'
                     return OpenResult.OK;
                 }
                 catch (Exception)
@@ -274,11 +275,10 @@ namespace TrionicCANLib.CAN
         public override CloseResult close()
         {
             if (m_deviceIsOpen)
-                m_serialPort.Write("C\r");          // mbed ESCape CAN interface
+                m_serialPort.Write("C\r"); // close CAN channel
             m_endThread = true;
             m_serialPort.Close();
             m_deviceIsOpen = false;
-
             return CloseResult.OK;
         }
     }

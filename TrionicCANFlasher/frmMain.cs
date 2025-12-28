@@ -443,7 +443,28 @@ namespace TrionicCANFlasher
                     trionic.ForcedBaudrate = 115200;
                     break;
                 case (int)CANBusAdapter.SLCAN:
-                    trionic.ForcedBaudrate = 3000000;
+                    //set selected com speed
+                    switch (AppSettings.Baudrate.Index)
+                    {
+                        case (int)ComSpeed.S3Mbit:
+                            trionic.ForcedBaudrate = 3000000;
+                            break;
+                        case (int)ComSpeed.S2Mbit:
+                            trionic.ForcedBaudrate = 2000000;
+                            break;
+                        case (int)ComSpeed.S1Mbit:
+                            trionic.ForcedBaudrate = 1000000;
+                            break;
+                        case (int)ComSpeed.S230400:
+                            trionic.ForcedBaudrate = 230400;
+                            break;
+                        case (int)ComSpeed.S115200:
+                            trionic.ForcedBaudrate = 115200;
+                            break;
+                        default:
+                            trionic.ForcedBaudrate = 0; //default , no speed will be changed
+                            break;
+                    }
                     break;
                 case (int)CANBusAdapter.ELM327:
                     //set selected com speed
