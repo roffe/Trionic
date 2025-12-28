@@ -12,20 +12,14 @@ on:
 jobs:
   build:
 
-    runs-on: windows-2019
+    runs-on: windows-2022
 
     steps:
     - uses: actions/checkout@v5
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v5
-      with:
-        dotnet-version: 8.0.x
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v2
     - name: Setup NuGet
       uses: nuget/setup-nuget@v2
     - run: nuget restore TrionicCanFlasher.sln
-    - name: Restore dependencies
-      run: dotnet restore
-    - name: Build
-      run: dotnet build --no-restore
-    - name: Test
-      run: dotnet test --no-build --verbosity normal
+    - name: Build app for release
+      run: msbuild TrionicCanFlasher.sln -t:rebuild -verbosity:diag -property:Configuration=Release
