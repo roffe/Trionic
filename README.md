@@ -11,6 +11,7 @@ The Trionic CAN Flasher currently supports the following interfaces:
 * Just4Tronic
 * Kvaser HS
 * J2534 (Beta)
+* SLCAN
 
 ## System Requirements
 A PC running Windows XP, Windows Vista, Windows 7, Windows 8.1 or Windows 10.
