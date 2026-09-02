@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading;
 using System.Runtime.InteropServices;
 using NLog;
@@ -19,7 +20,8 @@ namespace TrionicCANLib.CAN
         // mask and pattern messages use the same layout.
         private static readonly byte[] IdMask = { 0x00, 0x00, 0x07, 0xFF };
         private static readonly byte[] PassAll = { 0x00, 0x00, 0x00, 0x00 };
-        private const int RxBatch = 32;
+        // Blocking read timeout in ms. Only bounds how long close() waits for the read thread.
+        private const int ReadTimeout = 200;
 
         volatile bool m_deviceIsOpen = false;
         volatile bool m_endThread;
@@ -126,7 +128,7 @@ namespace TrionicCANLib.CAN
         /// </summary>
         public void readMessages()
         {
-            IntPtr rxMsgs = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(PassThruMsg)) * RxBatch);
+            IntPtr rxMsg = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(PassThruMsg)));
             CANMessage canMessage = new CANMessage();
             logger.Debug("readMessages started");
             try
@@ -135,46 +137,52 @@ namespace TrionicCANLib.CAN
                 {
                     try
                     {
+                        // One message per blocking call. The driver wakes us the moment a frame lands,
+                        // a bigger batch would make it wait for the batch to fill or the timeout to expire.
                         // In: room in the buffer. Out: messages actually read. Must be reset before every call.
-                        int numMsgs = RxBatch;
-                        J2534Err status = passThru.PassThruReadMsgs(m_channelId, rxMsgs, ref numMsgs, 0);
+                        int numMsgs = 1;
+                        long started = Stopwatch.GetTimestamp();
+                        J2534Err status = passThru.PassThruReadMsgs(m_channelId, rxMsg, ref numMsgs, ReadTimeout);
                         if (status != J2534Err.STATUS_NOERROR && status != J2534Err.ERR_TIMEOUT && status != J2534Err.ERR_BUFFER_EMPTY)
                         {
                             logger.Debug(String.Format("PassThruReadMsgs, status:{0}", status));
                             Thread.Sleep(10);
                             continue;
                         }
-                        if (numMsgs <= 0)
+                        if (numMsgs < 1)
                         {
-                            Thread.Sleep(1);
+                            // A driver that ignores the timeout would otherwise spin a core
+                            if (Stopwatch.GetTimestamp() - started < Stopwatch.Frequency / 1000)
+                            {
+                                Thread.Sleep(1);
+                            }
                             continue;
                         }
 
-                        foreach (PassThruMsg msg in rxMsgs.AsList<PassThruMsg>(Math.Min(numMsgs, RxBatch)))
+                        PassThruMsg msg = rxMsg.AsStruct<PassThruMsg>();
+
+                        // Skip echoes of our own frames and anything that is not id + 0..8 data bytes
+                        if ((msg.RxStatus & (RxStatus.TX_MSG_TYPE | RxStatus.TX_INDICATION)) != 0 || msg.DataSize < 4 || msg.DataSize > 12)
                         {
-                            // Skip echoes of our own frames and anything that is not id + 0..8 data bytes
-                            if ((msg.RxStatus & (RxStatus.TX_MSG_TYPE | RxStatus.TX_INDICATION)) != 0 || msg.DataSize < 4 || msg.DataSize > 12)
-                            {
-                                continue;
-                            }
-
-                            byte[] all = msg.GetBytes();
-                            uint id = (uint)(all[2] << 8 | all[3]);
-                            if (!acceptMessageId(id))
-                            {
-                                continue;
-                            }
-
-                            byte length = (byte)(msg.DataSize - 4);
-                            byte[] data = new byte[length];
-                            Array.Copy(all, 4, data, 0, length);
-
-                            canMessage.setID(id);
-                            canMessage.setTimeStamp(msg.Timestamp);
-                            canMessage.setCanData(data, length);
-
-                            receivedMessage(canMessage);
+                            continue;
                         }
+
+                        byte[] all = msg.GetBytes();
+                        uint id = (uint)(all[2] << 8 | all[3]);
+                        if (!acceptMessageId(id))
+                        {
+                            continue;
+                        }
+
+                        byte length = (byte)(msg.DataSize - 4);
+                        byte[] data = new byte[length];
+                        Array.Copy(all, 4, data, 0, length);
+
+                        canMessage.setID(id);
+                        canMessage.setTimeStamp(msg.Timestamp);
+                        canMessage.setCanData(data, length);
+
+                        receivedMessage(canMessage);
                     }
                     catch (Exception e)
                     {
@@ -186,7 +194,7 @@ namespace TrionicCANLib.CAN
             }
             finally
             {
-                Marshal.FreeHGlobal(rxMsgs);
+                Marshal.FreeHGlobal(rxMsg);
             }
             logger.Debug("readMessages thread ended");
         }
