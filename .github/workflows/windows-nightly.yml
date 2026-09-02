@@ -1,0 +1,58 @@
+name: Build Nightly
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v2
+
+    - name: Install WiX
+      run: dotnet tool install --global wix
+
+    - name: Setup NuGet
+      uses: nuget/setup-nuget@v2
+
+    - name: Restore NuGet packages
+      run: nuget restore TrionicCanFlasher.sln
+
+    - name: Build app for release
+      run: msbuild .\TrionicCANFlasher\TrionicCANFlasher.csproj -t:rebuild -property:Configuration=Release -property:Platform=x86
+
+    - name: Build Setup
+      run: msbuild .\SetupCANFlasher\SetupCANFlasher.wixproj -t:rebuild -property:Configuration=Release -property:Platform=x86
+
+    - name: Creating Setup Zip
+      run: 7z a TrionicCANFlasher.zip .\SetupCANFlasher\bin\x86\Release\TrionicCANFlasher.msi
+
+    # ponytail: rolling tag, one pre-release that always points at latest master
+    - name: Move nightly tag
+      run: |
+        git tag -f nightly
+        git push -f origin nightly
+
+    - name: Release
+      uses: softprops/action-gh-release@v2
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        tag_name: nightly
+        name: Nightly build
+        body: Automated build of ${{ github.sha }}
+        prerelease: true
+        make_latest: "false"
+        files: |
+          .\SetupCANFlasher\bin\x86\Release\TrionicCANFlasher.msi
+          TrionicCANFlasher.zip
