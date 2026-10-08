@@ -3,12 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using System.IO.Ports;
 using System.Threading;
-using Microsoft.Win32;
 using System.Text;
 using System.Collections;
 using System.Diagnostics;
 using NLog;
 using TrionicCANLib.API;
+using TrionicCANLib.WMI;
 
 namespace TrionicCANLib.CAN
 {
@@ -67,7 +67,7 @@ namespace TrionicCANLib.CAN
 
         public static new string[] GetAdapterNames()
         {
-            return SerialPort.GetPortNames();
+            return COMPortInfo.GetPortNames();
         }
 
         public override void SetSelectedAdapter(string adapter)
@@ -321,6 +321,8 @@ namespace TrionicCANLib.CAN
         public override OpenResult open()
         {
             receiveData = false;
+            // before Open: SerialPort opens the tty exclusive (TIOCEXCL), the ioctl would get EBUSY after it. The driver keeps the setting until unplug
+            SerialLowLatency.TryEnable(m_forcedComport);
 
             var detectedRate = DetectInitialPortSpeedAndReset();
             if (detectedRate != 0)

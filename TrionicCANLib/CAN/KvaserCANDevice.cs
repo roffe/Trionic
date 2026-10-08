@@ -71,9 +71,27 @@ namespace TrionicCANLib.CAN
             return 0F;
         }
 
+        // false when canlib32.dll / libcanlib.so.1 isn't installed (always on macOS) or has the wrong bitness (Windows)
+        private static bool InitializeLibrary()
+        {
+            try
+            {
+                Canlib.canInitializeLibrary();
+                return true;
+            }
+            catch (Exception e) when (e is DllNotFoundException || e is EntryPointNotFoundException || e is BadImageFormatException)
+            {
+                logger.Debug(e, "Kvaser CANlib not available");
+                return false;
+            }
+        }
+
         public static new string[] GetAdapterNames()
         {
-            Canlib.canInitializeLibrary();
+            if (!InitializeLibrary())
+            {
+                return new string[0];
+            }
 
             int nrOfChannels;
             Canlib.canGetNumberOfChannels(out nrOfChannels);
@@ -82,8 +100,11 @@ namespace TrionicCANLib.CAN
             object channelCapabilities = new object();
             for (int i = 0; i < nrOfChannels; i++)
             {
-                Canlib.canGetChannelData(i, Canlib.canCHANNELDATA_CHANNEL_NAME, out channelName);
-                Canlib.canGetChannelData(i, Canlib.canCHANNELDATA_CHANNEL_CAP, out channelCapabilities);
+                if (Canlib.canGetChannelData(i, Canlib.canCHANNELDATA_CHANNEL_NAME, out channelName) != Canlib.canStatus.canOK ||
+                    Canlib.canGetChannelData(i, Canlib.canCHANNELDATA_CHANNEL_CAP, out channelCapabilities) != Canlib.canStatus.canOK)
+                {
+                    continue;
+                }
 
                 uint capability = (uint)channelCapabilities;
                 if ((capability & Canlib.canCHANNEL_CAP_VIRTUAL) != Canlib.canCHANNEL_CAP_VIRTUAL)
@@ -101,14 +122,18 @@ namespace TrionicCANLib.CAN
 
         public override void SetSelectedAdapter(string adapter)
         {
-            Canlib.canInitializeLibrary();
-
-            int nrOfChannels;
-            Canlib.canGetNumberOfChannels(out nrOfChannels);
+            int nrOfChannels = 0;
+            if (InitializeLibrary())
+            {
+                Canlib.canGetNumberOfChannels(out nrOfChannels);
+            }
             object o = new object();
             for (int i = 0; i < nrOfChannels; i++)
             {
-                Canlib.canGetChannelData(i, Canlib.canCHANNELDATA_CHANNEL_NAME, out o);
+                if (Canlib.canGetChannelData(i, Canlib.canCHANNELDATA_CHANNEL_NAME, out o) != Canlib.canStatus.canOK)
+                {
+                    continue;
+                }
                 if(adapter.Equals(o.ToString()))
                 {
                     ChannelNumber = i;
@@ -184,7 +209,10 @@ namespace TrionicCANLib.CAN
         /// returned.</returns>
         override public OpenResult open()
         {
-            Canlib.canInitializeLibrary();
+            if (!InitializeLibrary())
+            {
+                return OpenResult.OpenError;
+            }
 
             if (isOpen())
             {
@@ -316,6 +344,11 @@ namespace TrionicCANLib.CAN
         override public CloseResult close()
         {
             m_endThread = true;
+            // linuxcan frees the handle in canClose while a canReadWait on it may still be running, let the reader leave first
+            if (m_readThread != null && m_readThread != Thread.CurrentThread && m_readThread.IsAlive)
+            {
+                m_readThread.Join(1000);
+            }
 
             Canlib.canStatus statusBusOff1 = Canlib.canStatus.canOK;
             Canlib.canStatus statusBusOff2 = Canlib.canStatus.canOK;

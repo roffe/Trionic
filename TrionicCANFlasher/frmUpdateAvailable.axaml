@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TrionicCANFlasher.frmUpdateAvailable"
+        Title="New version TrionicCANFlasher available..."
+        Icon="/TrionicCanFlasher.ico"
+        Width="544" SizeToContent="Height"
+        CanResize="False" CanMaximize="False" CanMinimize="False"
+        WindowStartupLocation="CenterOwner">
+    <StackPanel Margin="12" Spacing="8">
+        <Border BorderThickness="1" BorderBrush="Gray" Padding="4">
+            <SelectableTextBlock x:Name="richTextBox1" FontSize="29" TextWrapping="Wrap"
+                                 Text="TrionicCANFlasher automatic updater found some new toys for you!" />
+        </Border>
+        <TextBlock x:Name="label1" FontSize="15" HorizontalAlignment="Center" Text="Available version: 1.0.54" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+            <Button x:Name="button2" Content="Ignore" MinWidth="75" IsCancel="True" Click="button2_Click" />
+            <Button x:Name="button1" Content="OK" MinWidth="75" IsDefault="True" Click="button1_Click" />
+        </StackPanel>
+    </StackPanel>
+</Window>

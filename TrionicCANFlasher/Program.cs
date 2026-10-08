@@ -1,7 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Windows.Forms;
+using Avalonia;
 
 namespace TrionicCANFlasher
 {
@@ -11,11 +9,15 @@ namespace TrionicCANFlasher
         /// The main entry point for the application.
         /// </summary>
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new frmMain());
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        }
+
+        // also used by the Avalonia previewer
+        public static AppBuilder BuildAvaloniaApp()
+        {
+            return AppBuilder.Configure<App>().UsePlatformDetect().WithInterFont().LogToTrace();
         }
     }
 }

@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Runtime.InteropServices;
 using NLog;
-using J2534DotNet;
+using TrionicCANLib.CAN.J2534;
 
 namespace TrionicCANLib.CAN
 {

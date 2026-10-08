@@ -27,10 +27,21 @@ namespace TrionicCANLib.API
         public event ITrionic.CanFrame onCanFrame;
 
         // implements functions for canbus access for Trionic 8
-        [DllImport("winmm.dll", EntryPoint = "timeBeginPeriod")]
-        public static extern uint MM_BeginPeriod(uint uMilliseconds);
-        [DllImport("winmm.dll", EntryPoint = "timeEndPeriod")]
-        public static extern uint MM_EndPeriod(uint uMilliseconds);
+        [DllImport("winmm.dll")]
+        private static extern uint timeBeginPeriod(uint uMilliseconds);
+        [DllImport("winmm.dll")]
+        private static extern uint timeEndPeriod(uint uMilliseconds);
+
+        // Windows timer resolution; other OSes already sleep with ~1 ms granularity
+        public static uint MM_BeginPeriod(uint uMilliseconds)
+        {
+            return OperatingSystem.IsWindows() ? timeBeginPeriod(uMilliseconds) : 0;
+        }
+
+        public static uint MM_EndPeriod(uint uMilliseconds)
+        {
+            return OperatingSystem.IsWindows() ? timeEndPeriod(uMilliseconds) : 0;
+        }
 
         protected int m_sleepTime = (int)SleepTime.Default;
 

@@ -30,7 +30,9 @@ namespace TrionicCANLib.KWP
         private static IKWPDevice m_kwpDevice;
 
         private bool gotSequrityAccess = false;
+        private bool m_sessionStarted = false;
         private int keepAliveTimeout = 1000;
+        internal static int m_busyRetryDelay = 50; // ms between busyRepeatRequest resends (tests shorten it)
         private static KWPHandler m_instance;
         private Mutex m_requestMutex = new Mutex();
         private TimerCallback timerDelegate;
@@ -101,7 +103,48 @@ namespace TrionicCANLib.KWP
         /// <returns>true on success, otherwise false.</returns>
         public bool startSession()
         {
-            return m_kwpDevice.startSession();
+            if (!m_kwpDevice.startSession())
+                return false;
+            // a new session starts without security access
+            m_sessionStarted = true;
+            gotSequrityAccess = false;
+            return true;
+        }
+
+        /// <summary>
+        /// This method ends the KWP session started by startSession, if it is still open.
+        /// A T7 ignores startCommunication until the previous session has ended or timed out.
+        /// </summary>
+        /// <returns>true if the ECU confirmed the stop, otherwise false.</returns>
+        public bool stopSession()
+        {
+            return stopSession(false);
+        }
+
+        /// <summary>
+        /// This method ends the KWP session.
+        /// </summary>
+        /// <param name="a_evenIfNotStarted">Also send the stop when this handler holds no session,
+        /// for a session the ECU still keeps (another tester, a stop that got lost).</param>
+        /// <returns>true if the ECU confirmed the stop, otherwise false.</returns>
+        public bool stopSession(bool a_evenIfNotStarted)
+        {
+            bool stopped = false;
+            m_requestMutex.WaitOne();
+            try
+            {
+                if ((m_sessionStarted || a_evenIfNotStarted) && m_kwpDevice != null && m_kwpDevice.isOpen())
+                {
+                    stopped = m_kwpDevice.stopSession();
+                    logger.Debug("stopSession: " + (stopped ? "session ended" : "not confirmed"));
+                }
+                m_sessionStarted = false;
+            }
+            finally
+            {
+                m_requestMutex.ReleaseMutex();
+            }
+            return stopped;
         }
 
         /// <summary>
@@ -114,6 +157,15 @@ namespace TrionicCANLib.KWP
             logger.Debug("******* KWPHandler: Opening kwpDevice");
 
             return m_kwpDevice.open();
+        }
+
+        /// <summary>
+        /// True while the IKWPDevice is open. Requests to a closed device fail at once
+        /// (DeviceNotConnected), so retrying them only spins.
+        /// </summary>
+        public bool isDeviceOpen()
+        {
+            return m_kwpDevice != null && m_kwpDevice.isOpen();
         }
 
         /// <summary>
@@ -166,6 +218,9 @@ namespace TrionicCANLib.KWP
             if (reply.getMode() == 0x51)
             {
                 logger.Debug("Reset Success: " + reply.ToString());
+                // the ECU reboots without the session: a stopSession would only wait for its timeout
+                m_sessionStarted = false;
+                gotSequrityAccess = false;
                 return true;
             }
             else if (reply.getMode() == 0x7F)
@@ -733,6 +788,16 @@ namespace TrionicCANLib.KWP
             //Data = aaallll (aaa = address, llll = length)
             //Expected result = 0x74
             result = sendRequest(new KWPRequest(0x34, addressAndLength), out reply);
+            // The ECU burns the previous transferData block in the background and answers a
+            // requestDownload that arrives meanwhile with 7F 34 21 (busyRepeatRequest), which
+            // means resend it (gocan t7kwp retryOnBusy, 50 ms x 600). Reply [03, 7F, SID, NRC].
+            for (int busy = 0; busy < 600 && result == KWPResult.OK && reply.getLength() == 3 &&
+                reply.getMode() == 0x7F && reply.getPidHigh() == 0x34 && reply.getPidLow() == 0x21; busy++)
+            {
+                logger.Debug("requestDownload: ECU busy, resending");
+                Thread.Sleep(m_busyRetryDelay);
+                result = sendRequest(new KWPRequest(0x34, addressAndLength), out reply);
+            }
             if (result != KWPResult.OK)
                 return result;
             if (reply.getMode() != 0x74)
@@ -759,6 +824,18 @@ namespace TrionicCANLib.KWP
             //Data = data to be flashed
             //Expected result = 0x76
             result = sendRequest(new KWPRequest(0x36, a_data), out reply);
+            // 7F 36 21: the ECU is still burning the previous block and keeps this one; the only
+            // correct follow-up is this identical 0x36 again. The next block or a 0x34 instead
+            // would be taken against the kept buffer (gocan t7kwp TransferDataBlock).
+            for (int busy = 0; busy < 600 && result == KWPResult.OK && reply.getLength() == 3 &&
+                reply.getMode() == 0x7F && reply.getPidHigh() == 0x36 && reply.getPidLow() == 0x21; busy++)
+            {
+                logger.Debug("transferData: ECU busy, resending");
+                Thread.Sleep(m_busyRetryDelay);
+                result = sendRequest(new KWPRequest(0x36, a_data), out reply);
+            }
+            if (result != KWPResult.OK)
+                return result;
             if (reply.getMode() != 0x76)
                 return KWPResult.NOK;
             else
@@ -1119,8 +1196,14 @@ namespace TrionicCANLib.KWP
             KWPResult result;
             result = sendRequest(new KWPRequest(0x82, 0x00), out reply);
             if (result == KWPResult.OK)
+            {
+                // 0x82 is stopCommunication: once confirmed the session is over and stopSession
+                // has nothing left to end
+                if (reply.getMode() == 0xC2)
+                    m_sessionStarted = false;
                 return true;
-            else 
+            }
+            else
                 return false;
         }
 
@@ -1183,27 +1266,33 @@ namespace TrionicCANLib.KWP
             }
 
             m_requestMutex.WaitOne();
-
-            logger.Trace(a_request.ToString());
-            for (int retry = 0; retry < 3; retry++)
+            // released whatever the device throws: a mutex left owned by the flasher thread hung
+            // every later request and Cleanup's stopSession
+            try
             {
-                result = m_kwpDevice.sendRequest(a_request, out reply);
-                a_reply = reply;
-                if (result == RequestResult.NoError)
+                logger.Trace(a_request.ToString());
+                for (int retry = 0; retry < 3; retry++)
                 {
-                    logger.Trace(reply.ToString());
-                    logger.Trace(""); // empty line
+                    result = m_kwpDevice.sendRequest(a_request, out reply);
+                    a_reply = reply;
+                    if (result == RequestResult.NoError)
+                    {
+                        logger.Trace(reply.ToString());
+                        logger.Trace(""); // empty line
 
-                    m_requestMutex.ReleaseMutex();
-                    return KWPResult.OK;
-                }
-                else
-                {
-                    logger.Trace("Error in KWPHandler::sendRequest: " + result.ToString() + " " + retry.ToString());
-                    logger.Debug("Error in KWPHandler::sendRequest: " + result.ToString() + " " + retry.ToString());
+                        return KWPResult.OK;
+                    }
+                    else
+                    {
+                        logger.Trace("Error in KWPHandler::sendRequest: " + result.ToString() + " " + retry.ToString());
+                        logger.Debug("Error in KWPHandler::sendRequest: " + result.ToString() + " " + retry.ToString());
+                    }
                 }
             }
-            m_requestMutex.ReleaseMutex();
+            finally
+            {
+                m_requestMutex.ReleaseMutex();
+            }
             return KWPResult.Timeout;
         }
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using TrionicCANLib.CAN;
 using NLog;
 using TrionicCANLib.API;
@@ -240,12 +241,44 @@ namespace TrionicCANLib.KWP
         }
 
         /// <summary>
+        /// Stop a KWP session (stopCommunication).
+        /// </summary>
+        /// <remarks>
+        /// While a session is alive the ECU does not answer startCommunication from any tester;
+        /// without a stop it only ends after 10-15 s without requests. The stop must go on 0x240,
+        /// 0x220 only answers startCommunication.
+        /// 240h [40 A1 01 82 00 00 00 00] -> 258h [C0 BF 01 C2 00 00 00 00], acked on 0x266.
+        /// </remarks>
+        /// <returns>True if the ECU confirmed the stop, otherwise false.</returns>
+        public override bool stopSession()
+        {
+            KWPReply reply;
+            RequestResult result = sendRequest(new KWPRequest(0x82), out reply, Math.Min(getTimeout(), 250));
+            if (result == RequestResult.NoError && reply.getMode() == 0xC2)
+            {
+                // Give the 0x266 ack time to reach the bus before the caller closes the adapter
+                // (the CombiAdapter drops queued frames on close). Until the ECU sees it, or 400 ms
+                // pass, it can't send the 0x238 reply to a new startCommunication: it takes the
+                // session anyway and then ignores further startCommunication.
+                Thread.Sleep(20);
+                return true;
+            }
+            logger.Debug("No positive reply on stopCommunication: " + result.ToString() + " " + reply.ToString());
+            return false;
+        }
+
+        /// <summary>
         /// Send a KWP request.
         /// </summary>
         /// <param name="a_request">A KWP request.</param>
         /// <param name="r_reply">A KWP reply.</param>
         /// <returns>The status of the request.</returns>
         public override RequestResult sendRequest(KWPRequest a_request, out KWPReply r_reply)
+        {
+            return sendRequest(a_request, out r_reply, getTimeout());
+        }
+
+        private RequestResult sendRequest(KWPRequest a_request, out KWPReply r_reply, int a_timeout)
         {
             uint row;
             uint all_rows = row = nrOfRowsToSend(a_request.getData());
@@ -271,7 +304,7 @@ namespace TrionicCANLib.KWP
                 }
             }
 
-            var response = m_kwpCanListener.waitMessage(getTimeout());          
+            var response = m_kwpCanListener.waitMessage(a_timeout);          
             
             // Receive one or several replys and send an ack for each reply.
             if (response.getID() == 0x258)
@@ -283,19 +316,29 @@ namespace TrionicCANLib.KWP
                 //Assume that no KWP reply contains more than 0x200 bytes
                 byte[] reply = new byte[0x200];
                 reply = collectReply(reply, response.getData(), row);
-                sendAck(nrOfRows - 1);
-                nrOfRows--;
-
+                // Arm the wait before the ack: the ECU sends the next frame as soon as it sees the
+                // ack, which can be before sendMessage returns (CombiAdapter, CANUSB VCP), and arming
+                // after it threw that frame away.
                 m_kwpCanListener.setupWaitMessage(0x258);
+                if (!sendAck(nrOfRows - 1))
+                {
+                    r_reply = new KWPReply();
+                    return RequestResult.ErrorSending;
+                }
+                nrOfRows--;
 
                 while (nrOfRows > 0)
                 {
-                    response = m_kwpCanListener.waitMessage(getTimeout());
+                    response = m_kwpCanListener.waitMessage(a_timeout);
                     if (response.getID() == 0x258)
                     {
                         row++;
                         reply = collectReply(reply, response.getData(), row);
-                        sendAck(nrOfRows - 1);
+                        if (!sendAck(nrOfRows - 1))
+                        {
+                            r_reply = new KWPReply();
+                            return RequestResult.ErrorSending;
+                        }
                         nrOfRows--;
                     }
                     else
@@ -426,7 +469,9 @@ namespace TrionicCANLib.KWP
         /// Send an acknowledgement message.
         /// </summary>
         /// <param name="a_rowNr">The row number that should be acknowledged.</param>
-        private void sendAck(uint a_rowNr)
+        /// <returns>false if the adapter refused it: a failed request (it used to throw, which skipped
+        /// the device and adapter close in Trionic7.Cleanup and killed the flasher thread)</returns>
+        private bool sendAck(uint a_rowNr)
         {
             CANMessage msg = new CANMessage(0x266,0,5);
             msg.elmExpectedResponses =(a_rowNr==0)?0:1;
@@ -438,8 +483,11 @@ namespace TrionicCANLib.KWP
             data = setCanData(data, (byte)(0x80 | (int)(a_rowNr)), i++);
             msg.setData(data);
             if (!m_canDevice.sendMessage(msg))
-                throw new Exception("Error sending ack");
-
+            {
+                logger.Debug("Error sending ack");
+                return false;
+            }
+            return true;
         }
     }
 }

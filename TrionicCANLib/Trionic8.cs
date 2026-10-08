@@ -9,7 +9,6 @@ using System.ComponentModel;
 using TrionicCANLib.CAN;
 using TrionicCANLib.API;
 using TrionicCANLib;
-using System.Windows.Forms;
 using System.Collections;
 using NLog;
 using TrionicCANLib.Checksum;
@@ -5353,7 +5352,47 @@ namespace TrionicCANLib.API
             return false;
         }
 
-        private void SendDeviceControlMessage(byte command)
+        /// <summary>
+        /// Manual ECU reset (Reset ECU button), T8 main only.
+        /// </summary>
+        /// <remarks>
+        /// A legion bootloader that is still running (e.g. its exit request failed after a flash)
+        /// gets the exit request it would have got at the end of the flash. Otherwise DeviceControl
+        /// CPID $16, the request that persists the DID writes above: "ResetECU" in the firmware
+        /// (FD0M CPID16_Handler), answered 02 EE 16, after which the ECU saves NVDM and shuts down
+        /// to restart; refused with 7F AE 22 while the engine turns.
+        /// </remarks>
+        /// <returns>true if the ECU accepted the reset</returns>
+        public bool ResetECU()
+        {
+            // the loader sometimes misses a ping, StartCommon tries 4 times too
+            for (int i = 0; i < 4; i++)
+            {
+                if (LegionPing())
+                {
+                    return LegionRequestexit();
+                }
+                Thread.Sleep(40);
+            }
+
+            ulong data = SendDeviceControlMessage(0x16);
+            if (getCanData(data, 0) == 0x02 && getCanData(data, 1) == 0xEE && getCanData(data, 2) == 0x16)
+            {
+                CastInfoEvent("ECU accepted the reset, it restarts within a few seconds", ActivityType.ConvertingFile);
+                return true;
+            }
+            if (getCanData(data, 1) == 0x7F && getCanData(data, 2) == 0xAE)
+            {
+                CastInfoEvent("ECU refused the reset: " + TranslateErrorCode(getCanData(data, 3)), ActivityType.ConvertingFile);
+            }
+            else
+            {
+                CastInfoEvent("ECU did not answer the reset request", ActivityType.ConvertingFile);
+            }
+            return false;
+        }
+
+        private ulong SendDeviceControlMessage(byte command)
         {
             CANMessage msg = new CANMessage(0x7E0, 0, 3);
             ulong cmd = 0x000000000000AE02;
@@ -5364,10 +5403,11 @@ namespace TrionicCANLib.API
             if (!canUsbDevice.sendMessage(msg))
             {
                 CastInfoEvent("Couldn't send message", ActivityType.ConvertingFile);
-                return;
+                return 0;
             }
             CANMessage ECMresponse = new CANMessage();
             ECMresponse = m_canListener.waitMessage(timeoutP2ct);
+            return ECMresponse.getData();
         }
 
         private void DynamicallyDefineLocalIdentifier(byte id, byte type)
@@ -5684,7 +5724,6 @@ namespace TrionicCANLib.API
                             {
                                 logger.Debug("Couldn't send message");
                             }
-                            Application.DoEvents();
                             if (m_sleepTime > 0)
                                 Thread.Sleep(m_sleepTime);
 
@@ -5887,7 +5926,6 @@ namespace TrionicCANLib.API
                             {
                                 logger.Debug("Couldn't send message");
                             }
-                            Application.DoEvents();
                             if (m_sleepTime > 0)
                                 Thread.Sleep(m_sleepTime);
                         }
@@ -6285,7 +6323,6 @@ namespace TrionicCANLib.API
                         if (m_sleepTime > 0)
                             Thread.Sleep(m_sleepTime);
                     }
-                    Application.DoEvents();
 
                     // now wait for 01 76 00 00 00 00 00 00 
                     ulong data = m_canListener.waitMessage(timeoutP2ct, 0x7E8).getData();
@@ -6435,7 +6472,6 @@ namespace TrionicCANLib.API
                     SendKeepAlive();
                     keepAliveSw.Start();
                 }
-                Application.DoEvents();
             }
             sw.Stop();
             _stallKeepAlive = false;
@@ -7218,8 +7254,6 @@ namespace TrionicCANLib.API
 
         private bool ProgramFlashME96(string filename, int start, int end)
         {
-            bool result = false;
-
             int startAddress = start;
             int range = end - start;
             int blockSize = 0xFF8;//4088
@@ -7297,7 +7331,6 @@ namespace TrionicCANLib.API
                         if (m_sleepTime > 0)
                             Thread.Sleep(m_sleepTime);
                     }
-                    Application.DoEvents();
 
                     ulong data = m_canListener.waitMessage(timeoutP2ce, 0x7E8).getData();
                     while (true)
@@ -7620,7 +7653,6 @@ namespace TrionicCANLib.API
                             {
                                 logger.Debug("Couldn't send message");
                             }
-                            Application.DoEvents();
                             if (m_sleepTime > 0)
                                 Thread.Sleep(m_sleepTime);
 
@@ -7836,12 +7868,8 @@ namespace TrionicCANLib.API
                            CastInfoEvent(("Battery: " + Val1.ToString("F") + " V"), ActivityType.UploadingBootloader);
                            if (Val1 < 11.0)
                            {
-                               DialogResult result = DialogResult.No;
-
-                               result = MessageBox.Show("Your battery voltage is rather low.\nAre you sure you want to continue?",
-                                   "You have been warned", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-
-                               if (result == DialogResult.No)
+                               if (!UserPrompt.AskYesNo("Your battery voltage is rather low.\nAre you sure you want to continue?",
+                                   "You have been warned"))
                                {
                                    CastInfoEvent("Aborting", ActivityType.UploadingBootloader);
                                    LegionRequestexit();
@@ -7957,7 +7985,6 @@ namespace TrionicCANLib.API
                             {
                                 logger.Debug("Couldn't send message");
                             }
-                            Application.DoEvents();
                             if (m_sleepTime > 0)
                                 Thread.Sleep(m_sleepTime);
 
@@ -8205,12 +8232,8 @@ namespace TrionicCANLib.API
         // Throw a warning if the user has selected format boot and it is different
         private bool LeaveRecoveryBe()
         {
-            DialogResult result = DialogResult.No;
-
-            result = MessageBox.Show("Do you REALLY want to write a new boot partition?!",
-                "Point of no return", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-
-            if (result == DialogResult.Yes)
+            if (UserPrompt.AskYesNo("Do you REALLY want to write a new boot partition?!",
+                "Point of no return"))
             {
                 CastInfoEvent("Warning, boot partition will be formated", ActivityType.ErasingFlash);
                 return false;
@@ -8223,12 +8246,8 @@ namespace TrionicCANLib.API
         // Throw a warning if the user has selected format sys and it is different
         private bool LeaveNVDMBe()
         {
-            DialogResult result = DialogResult.No;
-
-            result = MessageBox.Show("Do you REALLY want to flash new VIN and key data?!",
-                "Point of no return", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
-
-            if (result == DialogResult.Yes)
+            if (UserPrompt.AskYesNo("Do you REALLY want to flash new VIN and key data?!",
+                "Point of no return"))
             {
                 CastInfoEvent("Warning, NVDM will be formated", ActivityType.ErasingFlash);
                 return false;
@@ -8463,8 +8482,8 @@ namespace TrionicCANLib.API
                     CastInfoEvent("Select 'Unlock boot partition' and 'Unlock system partitions' and try again.", ActivityType.UploadingFlash);
                     CastInfoEvent("When asked if you want to write boot you MUST click YES!", ActivityType.UploadingFlash);
 
-                    MessageBox.Show("DANGER: Read log window for further information\nFailure to follow instructions WILL brick the ECU",
-                        "Boot is broken!!", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1);
+                    UserPrompt.Show("DANGER: Read log window for further information\nFailure to follow instructions WILL brick the ECU",
+                        "Boot is broken!!");
                 }
                 else
                 {
@@ -8486,8 +8505,8 @@ namespace TrionicCANLib.API
                     CastInfoEvent("Select 'Unlock boot partition' and try again.", ActivityType.UploadingFlash);
                     CastInfoEvent("When asked if you want to write boot you MUST click YES!", ActivityType.UploadingFlash);
 
-                    MessageBox.Show("DANGER: Read log window for further information\nFailure to follow instructions WILL brick MCP",
-                        "Boot is broken!!", MessageBoxButtons.OK, MessageBoxIcon.Error, MessageBoxDefaultButton.Button1);
+                    UserPrompt.Show("DANGER: Read log window for further information\nFailure to follow instructions WILL brick MCP",
+                        "Boot is broken!!");
                 }
                 else
                 {
@@ -8566,19 +8585,20 @@ namespace TrionicCANLib.API
             return success;
         }
 
-        private void LegionRequestexit()
+        private bool LegionRequestexit()
         {
             byte i = 10;
             CastInfoEvent("Requesting bootloader exit..", ActivityType.ConvertingFile);
             do
             {
                 if (Send0120())
-                    return;
+                    return true;
                 Thread.Sleep(100);
             } while (--i > 0);
 
             CastInfoEvent("Bootloader did not respond to exit-request", ActivityType.ConvertingFile);
             CastInfoEvent("You may have to power-cycle the ECU", ActivityType.ConvertingFile);
+            return false;
         }
 
         private void WriteFlashLegion(byte Device, int EndAddress, bool z22se, object sender, DoWorkEventArgs workEvent)
@@ -8815,7 +8835,6 @@ namespace TrionicCANLib.API
                             }
                         }
 
-                        Application.DoEvents();
                         ulong data = m_canListener.waitMessage(timeoutP2ct, 0x7E8).getData();
                         if (getCanData(data, 0) != 0x01 || getCanData(data, 1) != 0x76)
                         {
@@ -8848,8 +8867,6 @@ namespace TrionicCANLib.API
                     else
                         Problem = true;
                 }
-                else
-                    Application.DoEvents();
 
                 sw.Stop();
 
@@ -8962,8 +8979,6 @@ namespace TrionicCANLib.API
                     }
                 }
 
-                Application.DoEvents();
-
                 // Throttle back after a set number of dropped frames.
                 if (Dropped == 3 && Fallback < 8000)
                 {
@@ -8992,7 +9007,7 @@ namespace TrionicCANLib.API
             {
                 try
                 {
-                    System.Security.Cryptography.MD5CryptoServiceProvider md5 = new System.Security.Cryptography.MD5CryptoServiceProvider();
+                    System.Security.Cryptography.MD5 md5 = System.Security.Cryptography.MD5.Create();
                     md5.Initialize();
 
                     CastInfoEvent("Verifying md5..", ActivityType.ConvertingFile);

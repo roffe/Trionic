@@ -17,6 +17,13 @@ namespace TrionicCANLib.Flasher
 
         private Logger logger = LogManager.GetCurrentClassLogger();
 
+        // errors go to the GUI log too, otherwise the user only sees the generic failure
+        private void Notify(string info)
+        {
+            logger.Debug(info);
+            onStatusChanged?.Invoke(this, new StatusEventArgs(info));
+        }
+
         //---------------------------------------------------------------------------------------------
         /**
             Constructor.
@@ -37,9 +44,11 @@ namespace TrionicCANLib.Flasher
         */
         public override FlashStatus getStatus()
         {
-            if (combi.OperationRunning())
+            if (combi.OperationRunning() || m_flashStatus == FlashStatus.StartingFlashSession ||
+                m_flashStatus == FlashStatus.ReadError || m_flashStatus == FlashStatus.WriteError)
             {
-                // in progress
+                // in progress, still connecting to the ECU (no operation running yet, nothing failed),
+                // or failed before the operation could start
                 return m_flashStatus;
             }
 
@@ -94,6 +103,7 @@ namespace TrionicCANLib.Flasher
         */
         public override void readFlash(string a_fileName)
         {
+            m_flashStatus = FlashStatus.StartingFlashSession;
             base.readFlash(a_fileName);
 
             try
@@ -112,7 +122,7 @@ namespace TrionicCANLib.Flasher
 
             catch (Exception e)
             {
-                logger.Debug("Read error: " + e.Message);
+                Notify("Read error: " + e.Message);
                 m_flashStatus = FlashStatus.ReadError;
             }
         }
@@ -125,6 +135,7 @@ namespace TrionicCANLib.Flasher
         */
         public override void writeFlash(string a_fileName)
         {
+            m_flashStatus = FlashStatus.StartingFlashSession;
             base.writeFlash(a_fileName);
 
             try
@@ -143,7 +154,7 @@ namespace TrionicCANLib.Flasher
 
             catch (Exception e)
             {
-                logger.Debug("Write error: " + e.Message);
+                Notify("Write error: " + e.Message);
                 m_flashStatus = FlashStatus.WriteError;
             }
         }
@@ -164,7 +175,7 @@ namespace TrionicCANLib.Flasher
 
             catch (Exception e)
             {
-                logger.Debug("Session error: " + e.Message);
+                Notify("Session error: " + e.Message);
                 return false;
             }
         }

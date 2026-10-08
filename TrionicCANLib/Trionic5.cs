@@ -64,7 +64,6 @@ using TrionicCANLib.Checksum;
 
 using System.Linq;
 using System.ComponentModel;
-using System.Windows.Forms;
 using System.Collections;
 using NLog;
 
@@ -332,12 +331,8 @@ S9035000AC";
                         switch (fi.Length)
                         {
                             case 0x20000:
-                                DialogResult result = MessageBox.Show("Do you want to upload a T5.2 BIN file to your T5.5 ECU",
-                                    "ECU Conversion Question",
-                                    MessageBoxButtons.YesNo,
-                                    MessageBoxIcon.Question,
-                                    MessageBoxDefaultButton.Button2);
-                                OkToUpgrade = (result == DialogResult.Yes) ? true : false;
+                                OkToUpgrade = UserPrompt.AskYesNo("Do you want to upload a T5.2 BIN file to your T5.5 ECU",
+                                    "ECU Conversion Question");
                                 break;
                             case 0x40000:
                                 break;
@@ -353,12 +348,8 @@ S9035000AC";
                             case 0x20000:
                                 break;
                             case 0x40000:
-                                DialogResult result = MessageBox.Show("Do you want to upload a T5.5 BIN file to your ECU that has been used as a T5.2?",
-                                    "ECU Conversion Question",
-                                    MessageBoxButtons.YesNo,
-                                    MessageBoxIcon.Question,
-                                    MessageBoxDefaultButton.Button2);
-                                OkToUpgrade = (result == DialogResult.Yes) ? true : false;
+                                OkToUpgrade = UserPrompt.AskYesNo("Do you want to upload a T5.5 BIN file to your ECU that has been used as a T5.2?",
+                                    "ECU Conversion Question");
                                 break;
                             default:
                                 CastInfoEvent("Not a Trionic BIN File!", ActivityType.ConvertingFile);
@@ -689,9 +680,6 @@ S9035000AC";
                 }
                 for (int i = 0; i < num; i++)
                 {
-                    // Not being able to move the application windows while it's working is suprisingly annoying!
-                    Application.DoEvents();
-
                     buffer2 = this.sendReadCommand(address);
                     address = (ushort)(address + 6);
                     for (int j = 0; j < 6; j++)
@@ -1290,7 +1278,7 @@ S9035000AC";
             DateTime dt = DateTime.Now;
             try
             {
-                using (StreamWriter sw = new StreamWriter(@"c:\" + dt.Year.ToString("D4") + dt.Month.ToString("D2") + dt.Day.ToString("D2") + "-CanTrace.log", true))
+                using (StreamWriter sw = new StreamWriter(Path.Combine(Path.GetTempPath(), dt.Year.ToString("D4") + dt.Month.ToString("D2") + dt.Day.ToString("D2") + "-CanTrace.log"), true))
                 {
                     if (IsTransmit)
                     {
@@ -2015,8 +2003,6 @@ S9035000AC";
 
                 while ((start + bytesread) < 0x80000)
                 {
-                    Application.DoEvents();
-
                     // read a section of 0x80 bytes from the BIN file and keep it in a buffer to send to the T5 ECU
                     byte[] bytes = new byte[0x80];
 
@@ -2498,6 +2484,29 @@ S9035000AC";
         {
             sendC2Command(); // reset ECU
             CastInfoEvent("ECU is reset", ActivityType.FinishedFlashing);
+        }
+
+        /// <summary>
+        /// Manual ECU reset (Reset ECU button). Uses the reset GetECUInfo and WriteFlash already end
+        /// with: upload MyBooty, then its C2 exit command, answered C2 00 08.. before it restarts the ECU.
+        /// </summary>
+        /// <returns>true if the bootloader confirmed the exit</returns>
+        public bool ResetECU()
+        {
+            if (!UploadBootLoader())
+            {
+                CastInfoEvent("ECU not reset", ActivityType.ConvertingFile);
+                return false;
+            }
+            Thread.Sleep(500); // as GetECUInfo, MyBooty prepares the chip selects first
+            // sendC2Command drops reply bytes 0-1 and returns zeros when nothing answered
+            if (Array.Exists(sendC2Command(), b => b != 0))
+            {
+                CastInfoEvent("ECU is reset", ActivityType.ConvertingFile);
+                return true;
+            }
+            CastInfoEvent("Bootloader did not confirm the reset", ActivityType.ConvertingFile);
+            return false;
         }
 
         /// <summary>

@@ -224,7 +224,7 @@ namespace TrionicCANLib
 
             byte[] buf = new byte[end - start];
 
-            System.Security.Cryptography.MD5CryptoServiceProvider md5 = new System.Security.Cryptography.MD5CryptoServiceProvider();
+            System.Security.Cryptography.MD5 md5 = System.Security.Cryptography.MD5.Create();
             md5.Initialize();
 
             if (!byteswapped)

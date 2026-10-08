@@ -1,30 +1,12 @@
 <Project Sdk="WixToolset.Sdk/6.0.2">
   <PropertyGroup>
     <OutputName>TrionicCANFlasher</OutputName>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x86' ">
-    <DefineConstants>Debug</DefineConstants>
+    <!-- self-contained `dotnet publish -r win-x86` folder with libusb-1.0.dll added, see .github/workflows/build.yml -->
+    <PublishDir Condition="'$(PublishDir)' == ''">..\TrionicCANFlasher\bin\Release\net10.0\win-x86\publish</PublishDir>
+    <_PublishDirFull>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(PublishDir)'))</_PublishDirFull>
+    <DefineConstants>$(DefineConstants);PublishDir=$(_PublishDirFull.TrimEnd('\/'))</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\TrionicCANFlasher\TrionicCANFlasher.csproj">
-      <Name>TrionicCANFlasher</Name>
-      <Project>{ad7871be-0280-47d4-9492-2181bb1c789b}</Project>
-      <Private>True</Private>
-      <DoNotHarvest>True</DoNotHarvest>
-      <RefProjectOutputGroups>Binaries;Content;Satellites</RefProjectOutputGroups>
-      <RefTargetDir>INSTALLFOLDER</RefTargetDir>
-    </ProjectReference>
-    <ProjectReference Include="..\TrionicCANLib\TrionicCANLib.csproj">
-      <Name>TrionicCANLib</Name>
-      <Project>{3fe690b8-7a3b-425e-913c-bff7a55f7bc4}</Project>
-      <Private>True</Private>
-      <DoNotHarvest>True</DoNotHarvest>
-      <RefProjectOutputGroups>Binaries;Content;Satellites</RefProjectOutputGroups>
-      <RefTargetDir>INSTALLFOLDER</RefTargetDir>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="WixToolset.NetFx.wixext" Version="6.0.2" />
     <PackageReference Include="WixToolset.UI.wixext" Version="6.0.2" />
   </ItemGroup>
   <ItemGroup>

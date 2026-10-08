@@ -270,7 +270,8 @@ namespace TrionicCANLib.Checksum
 
             if (!File.Exists(a_filename)) 
                 return false;
-            FileStream fs = new FileStream(a_filename, FileMode.Open, FileAccess.Read);
+            // using: an odd footer makes readField throw, and an unclosed stream keeps the file locked on Windows
+            using FileStream fs = new FileStream(a_filename, FileMode.Open, FileAccess.Read);
             FileHeaderField fhf;
             fs.Seek(0, SeekOrigin.End);
             fileLength = fs.Position;

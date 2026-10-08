@@ -68,7 +68,7 @@ namespace TrionicCANLib.Firmware
                     {
                         return string.Empty;
                     }
-                    version = System.Text.Encoding.Default.GetString(read);
+                    version = System.Text.Encoding.Latin1.GetString(read);
                 }
             }
 
@@ -88,7 +88,7 @@ namespace TrionicCANLib.Firmware
                     {
                         return string.Empty;
                     }
-                    version = System.Text.Encoding.Default.GetString(read);
+                    version = System.Text.Encoding.Latin1.GetString(read);
                 }
             }
 

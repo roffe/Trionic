@@ -73,7 +73,7 @@ namespace TrionicCANLib
         internal static ulong GetFrameBytes(int frameNo, byte[] array, int startIndex)
         {
             var res = GetUlong(array, startIndex, 7);
-            res = res << 8 | (ulong)(frameNo & 0xFF);
+            res = res << 8 | (byte)frameNo;
             return res;
         }
 

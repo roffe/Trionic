@@ -156,7 +156,7 @@ namespace TrionicCANLib.CAN
                 }
                 else if (readResult == Lawicel.CANUSB.ERROR_CANUSB_NO_MESSAGE)
                 {
-                    Thread.Sleep(1);
+                    Lawicel.CANUSB.WaitReceive(m_deviceHandle); // DLL: Thread.Sleep(1)
                 }
             }
         }
@@ -214,7 +214,7 @@ namespace TrionicCANLib.CAN
                         Lawicel.CANUSB.CANUSB_FLAG_TIMESTAMP);
                 }
 
-                if (m_deviceHandle != 0)
+                if ((int)m_deviceHandle > 0) // canusb_Open returns 0 or a negative error code on failure
                 {
                     if (waitAnyMessage(1000, out msg) != 0)
                     {
@@ -253,8 +253,9 @@ namespace TrionicCANLib.CAN
             }
 
 
-            if (m_deviceHandle == 0x00000000)
+            if ((int)m_deviceHandle <= 0)
             {
+                m_deviceHandle = 0;
                 return OpenResult.OpenError;
             }
 

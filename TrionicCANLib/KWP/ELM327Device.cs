@@ -173,6 +173,8 @@ namespace TrionicCANLib.KWP
         /// <returns>true on success, otherwise false.</returns>
         public override bool open()
         {
+            // before Open: SerialPort opens the tty exclusive (TIOCEXCL), the ioctl would get EBUSY after it. The driver keeps the setting until unplug
+            SerialLowLatency.TryEnable(m_forcedComport);
             var detectedRate = DetectInitialPortSpeedAndReset();
             if (detectedRate != 0)
                 BaseBaudrate = detectedRate;

@@ -33,7 +33,7 @@ namespace TrionicCANLib.CAN
 
         public static new string[] GetAdapterNames()
         {
-            return SerialPort.GetPortNames();
+            return COMPortInfo.GetPortNames();
         }
 
         private string m_forcedComport = string.Empty;
@@ -173,8 +173,13 @@ namespace TrionicCANLib.CAN
 
         public override OpenResult open()
         {
-            //Automatically find port with Just4Trionic
+            //Automatically find port with Just4Trionic, else take the one the user picked (no USB info on macOS)
+            //if it is still there: a vanished COMn throws FileNotFoundException from Open() on Windows
             string port = UseWMIForCOMPortByFriendlyName("mbed Serial Port");
+            if (port == null && Array.IndexOf(COMPortInfo.GetPortNames(), m_forcedComport) >= 0)
+            {
+                port = m_forcedComport;
+            }
 
             m_serialPort.BaudRate = m_forcedBaudrate;
             m_serialPort.Handshake = Handshake.None;
@@ -189,6 +194,8 @@ namespace TrionicCANLib.CAN
                     m_serialPort.Close();
                 m_serialPort.PortName = port;
 
+                // before Open: SerialPort opens the tty exclusive (TIOCEXCL), the ioctl would get EBUSY after it. The driver keeps the setting until unplug
+                SerialLowLatency.TryEnable(port);
                 try
                 {
                     m_serialPort.Open();
@@ -307,15 +314,17 @@ namespace TrionicCANLib.CAN
         }
 
         /// <summary>
-        /// Use WMI to search for a device by its Frindly Name and returns a COM port string if found or NULL
+        /// Use WMI to search for a device by its Frindly Name and returns a COM port string if found or NULL.
+        /// Off Windows there are no friendly names, the mbed is found by its USB id instead.
         /// </summary>
         /// <param name="strFriendlyName">Friendly Name of device to find a COM port for</param>
-        /// <returns>COMn where n is the COM port number</returns>
+        /// <returns>COMn where n is the COM port number (/dev/ttyACMn on Linux)</returns>
         private static string UseWMIForCOMPortByFriendlyName(string strFriendlyName)
         {
             foreach (COMPortInfo comPort in COMPortInfo.GetCOMPortsInfo())
             {
-                if (comPort.Description.StartsWith(strFriendlyName))
+                // 0d28:0204 is the mbed interface chip, the same device the Windows "mbed Serial Port" driver binds to
+                if (comPort.Description.StartsWith(strFriendlyName) || comPort.UsbId == "0d28:0204")
                     return comPort.Name;
             }
             return null;

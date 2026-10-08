@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using NLog;
-using System.Windows.Forms;
 using TrionicCANLib.Firmware;
 
 namespace TrionicCANLib.Checksum

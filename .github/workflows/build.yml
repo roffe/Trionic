@@ -1,0 +1,136 @@
+name: Build
+on:
+  push:
+    branches: [master]
+    tags:
+    - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type == 'branch' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+        - { rid: win-x86,     os: windows-latest }
+        - { rid: linux-x64,   os: ubuntu-latest }
+        - { rid: linux-arm64, os: ubuntu-latest }
+        - { rid: osx-arm64,   os: macos-latest }
+        - { rid: osx-x64,     os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0 # history and tags, the version comes from the nearest v* tag (Directory.Build.props)
+
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.x
+
+    - name: Test
+      if: matrix.rid == 'linux-x64'
+      run: dotnet test TrionicCANLibTest -c Release
+
+    - name: Publish
+      run: dotnet publish TrionicCANFlasher/TrionicCANFlasher.csproj -c Release -r ${{ matrix.rid }} --self-contained -o out/TrionicCANFlasher
+
+    # LibUsbDotNet needs native libusb-1.0 for the CombiAdapter, its NuGet ships none.
+    # ponytail: MinGW32 build because it only links msvcrt.dll, the VS builds need the VC++ 2015+ runtime
+    - name: Add libusb-1.0.dll
+      if: runner.os == 'Windows'
+      run: |
+        curl -fsSLo libusb.7z https://github.com/libusb/libusb/releases/download/v1.0.30/libusb-1.0.30.7z
+        echo "7fb1dfec805b97983763d7d0ae244320da12add1003d4249c96cc4d586398c79  libusb.7z" | sha256sum -c
+        7z x -y -olibusb libusb.7z > /dev/null
+        cp libusb/MinGW32/dll/libusb-1.0.dll out/TrionicCANFlasher/
+
+    - name: Build Setup
+      if: runner.os == 'Windows'
+      run: |
+        dotnet build SetupCANFlasher/SetupCANFlasher.wixproj -c Release -p:Platform=x86 "-p:PublishDir=$GITHUB_WORKSPACE/out/TrionicCANFlasher"
+        mkdir dist
+        cp SetupCANFlasher/bin/x86/Release/TrionicCANFlasher.msi dist/
+        cd dist && 7z a TrionicCANFlasher.zip TrionicCANFlasher.msi
+
+    - name: Package Linux
+      if: runner.os == 'Linux'
+      run: |
+        cp packaging/linux/70-trioniccanflasher.rules out/TrionicCANFlasher/
+        mkdir dist
+        tar -czf dist/TrionicCANFlasher-${{ matrix.rid }}.tar.gz -C out TrionicCANFlasher
+
+    # ponytail: plain unsigned folder, no .app bundle or notarization
+    - name: Package macOS
+      if: runner.os == 'macOS'
+      run: |
+        mkdir dist
+        ditto -c -k --keepParent out/TrionicCANFlasher dist/TrionicCANFlasher-${{ matrix.rid }}.zip
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: ${{ matrix.rid }}
+        path: dist/*
+        if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - uses: actions/download-artifact@v8
+      with:
+        path: dist
+        merge-multiple: true
+
+    - uses: actions/setup-dotnet@v6
+      if: github.ref == 'refs/heads/master'
+      with:
+        dotnet-version: 10.x
+
+    # the same VersionFromGit target the build ran, e.g. 0.1.74.0-bfecafebc
+    - name: Version
+      id: version
+      if: github.ref == 'refs/heads/master'
+      env:
+        DOTNET_NOLOGO: true
+      run: echo "version=$(dotnet msbuild TrionicCANFlasher/TrionicCANFlasher.csproj -t:VersionFromGit -getProperty:InformationalVersion)" >> "$GITHUB_OUTPUT"
+
+    # ponytail: rolling tag, one pre-release that always points at latest master
+    - name: Move nightly tag
+      if: github.ref == 'refs/heads/master'
+      run: |
+        git tag -f nightly
+        git push -f origin nightly
+
+    - name: Nightly release
+      if: github.ref == 'refs/heads/master'
+      uses: softprops/action-gh-release@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        tag_name: nightly
+        name: Nightly build ${{ steps.version.outputs.version }}
+        body: Automated build ${{ steps.version.outputs.version }} of ${{ github.sha }}
+        prerelease: true
+        make_latest: "false"
+        files: dist/*
+
+    - name: Release
+      if: github.ref_type == 'tag'
+      uses: softprops/action-gh-release@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        make_latest: "true"
+        files: dist/*

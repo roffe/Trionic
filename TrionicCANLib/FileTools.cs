@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.IO;
 using NLog;
-using System.Windows.Forms;
+using TrionicCANLib.API;
 
 namespace TrionicCANLib
 {
@@ -67,7 +67,7 @@ namespace TrionicCANLib
                 }
                 catch (Exception E)
                 {
-                    MessageBox.Show("Failed to write to binary. Is it read-only? Details: " + E.Message);
+                    UserPrompt.Show("Failed to write to binary. Is it read-only? Details: " + E.Message);
                     logger.Debug(E.Message);
                 }
             }

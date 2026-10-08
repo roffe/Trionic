@@ -31,6 +31,17 @@ namespace TrionicCANLib.KWP
         /// <returns>true on success, otherwise false.</returns>
         public abstract bool startSession();
 
+        /// <summary>
+        /// This method ends the KWP session started by startSession (stopCommunication), so the
+        /// ECU answers the next startSession at once instead of after its session timeout.
+        /// Devices that leave the session to the adapter don't override it.
+        /// </summary>
+        /// <returns>true if the ECU confirmed the stop, otherwise false.</returns>
+        public virtual bool stopSession()
+        {
+            return false;
+        }
+
         public abstract bool EnableLog
         {
             get;

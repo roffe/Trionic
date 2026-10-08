@@ -93,7 +93,7 @@ namespace TrionicCANLib.Checksum
                 f.	Now crypt sMd5Seed: xor every byte with 21h, then substract D6h (minus)
                 g.	These 16 bytes are from CHPTR + 2 in the bin!!!! This is checksum level 1 !!
                          * */
-            System.Security.Cryptography.MD5CryptoServiceProvider md5 = new System.Security.Cryptography.MD5CryptoServiceProvider();
+            System.Security.Cryptography.MD5 md5 = System.Security.Cryptography.MD5.Create();
 
             int len = OffsetLayer1 - 0x20000;//- 1;
             md5.Initialize();

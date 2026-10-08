@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TrionicCANFlasher.frmChecksum"
+        Title="Trionic checksum"
+        Icon="/TrionicCanFlasher.ico"
+        SizeToContent="WidthAndHeight"
+        CanResize="False"
+        CanMinimize="False"
+        CanMaximize="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="12" Spacing="8">
+    <GroupBox x:Name="groupBox1" Header="Checksum validation Layer 1">
+      <Grid ColumnDefinitions="Auto,440" ColumnSpacing="12" RowSpacing="4" RowDefinitions="Auto,Auto">
+        <TextBlock x:Name="label1" Grid.Row="0" Text="File checksum" VerticalAlignment="Center" />
+        <TextBox x:Name="textBox1" Grid.Row="0" Grid.Column="1" />
+        <TextBlock x:Name="label2" Grid.Row="1" Text="Actual checksum" VerticalAlignment="Center" />
+        <TextBox x:Name="textBox2" Grid.Row="1" Grid.Column="1" />
+      </Grid>
+    </GroupBox>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="btnIgnore" Content="Ignore" MinWidth="75" HorizontalContentAlignment="Center" Click="btnIgnore_Click" />
+      <Button x:Name="btnUpdate" Content="Update and close" Click="btnUpdate_Click" />
+    </StackPanel>
+  </StackPanel>
+</Window>

@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TrionicCANFlasher.frmSettings"
+        Title="Settings"
+        Icon="/TrionicCanFlasher.ico"
+        Width="540"
+        SizeToContent="Height"
+        CanResize="False"
+        CanMinimize="False"
+        CanMaximize="False"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <Style Selector="TextBlock:disabled">
+      <Setter Property="Opacity" Value="0.5" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+  </Window.Styles>
+
+  <Grid Margin="12" ColumnDefinitions="*,*" ColumnSpacing="24"
+        RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+    <TextBlock x:Name="label4" Grid.Row="0" Grid.Column="0" Text="Adapter type" />
+    <ComboBox x:Name="cbxAdapterType" Grid.Row="1" Grid.Column="0" SelectionChanged="cbxAdapterType_SelectedIndexChanged" />
+    <CheckBox x:Name="cbEnableLogging" Grid.Row="3" Grid.Column="0" Content="Enable logging" IsChecked="True" />
+    <CheckBox x:Name="cbOnlyPBus" Grid.Row="4" Grid.Column="0" Content="Only P-Bus connection" IsChecked="True" IsCheckedChanged="cbOnlyPBus_Checkchanged" />
+    <CheckBox x:Name="cbOnboardFlasher" Grid.Row="5" Grid.Column="0" Content="Use flasher on device" IsChecked="True" />
+
+    <TextBlock x:Name="AdapterLabel" Grid.Row="0" Grid.Column="1" Text="Adapter" />
+    <ComboBox x:Name="cbxAdapterItem" Grid.Row="1" Grid.Column="1" />
+    <TextBlock x:Name="ComBaudLabel" Grid.Row="2" Grid.Column="1" Text="Com speed" Margin="0,4,0,0" />
+    <ComboBox x:Name="cbxComSpeed" Grid.Row="3" Grid.Column="1" />
+    <CheckBox x:Name="cbUseLegion" Grid.Row="4" Grid.Column="1" Content="Use Legion bootloader" IsChecked="True" IsCheckedChanged="cbUseLegion_CheckedChanged" />
+    <CheckBox x:Name="cbRemember" Grid.Row="5" Grid.Column="1" Content="Remember dimensions" />
+
+    <!-- Clicking this 6 times as a power user unlocks the hidden super user options -->
+    <TextBlock x:Name="label2" Grid.Row="6" Grid.Column="0" Text="Advanced features" FontWeight="Bold" Background="Transparent"
+               Margin="0,12,0,0" PointerPressed="label2_Click" />
+    <CheckBox x:Name="cbPowerUser" Grid.Row="7" Grid.Column="0" Content="I know what I am doing" IsCheckedChanged="cbPowerUser_CheckedChanged" />
+    <CheckBox x:Name="cbUnlockSys" Grid.Row="8" Grid.Column="0" Content="Unlock system partitions" IsCheckedChanged="cbUnlockSys_CheckedChanged" />
+    <CheckBox x:Name="cbUnlockBoot" Grid.Row="9" Grid.Column="0" Content="Unlock boot partition" />
+    <CheckBox x:Name="cbAutoChecksum" Grid.Row="10" Grid.Column="0" Content="Auto update checksum" />
+    <CheckBox x:Name="cbVerifyChecksum" Grid.Row="11" Grid.Column="0" Content="Verify checksum before flash" IsChecked="True" IsEnabled="False" />
+
+    <TextBlock x:Name="InterframeLabel" Grid.Row="6" Grid.Column="1" Text="Inter-frame delay" IsEnabled="False" Margin="0,12,0,0" />
+    <ComboBox x:Name="cbxInterFrame" Grid.Row="7" Grid.Column="1" IsEnabled="False" />
+    <CheckBox x:Name="cbUseLastPointer" Grid.Row="8" Grid.Column="1" Content="Use last address pointer" IsChecked="True" IsEnabled="False" />
+    <CheckBox x:Name="cbFaster" Grid.Row="9" Grid.Column="1" Content="Skip certain delays" IsEnabled="False" />
+
+    <Button x:Name="bntDiscard" Grid.Row="12" Grid.Column="0" Content="Cancel" IsCancel="True" Height="44" Margin="0,16,0,0"
+            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Click="bntDiscard_Click" />
+    <Button x:Name="btnSave" Grid.Row="12" Grid.Column="1" Content="Save" IsDefault="True" Height="44" Margin="0,16,0,0"
+            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Click="btnSave_Click" />
+  </Grid>
+</Window>

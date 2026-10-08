@@ -1,0 +1,88 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TrionicCANFlasher.frmMain"
+        Title="Trionic CAN flasher"
+        Icon="/TrionicCanFlasher.ico"
+        Width="1023" Height="382" MinWidth="600" MinHeight="382"
+        FontSize="12"
+        WindowStartupLocation="CenterScreen"
+        Opened="frmMain_Shown"
+        Closing="frmMain_FormClosing">
+    <Window.Styles>
+        <Style Selector="Grid#buttonPanel > Button">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="4" />
+        </Style>
+        <Style Selector="Grid#buttonPanel > Button /template/ ContentPresenter">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="TextAlignment" Value="Center" />
+        </Style>
+        <Style Selector="HyperlinkButton">
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <!-- the log is read-only: no accent border/background on focus or hover -->
+        <Style Selector="TextBox#textBoxLog:focus /template/ Border#PART_BorderElement, TextBox#textBoxLog:pointerover /template/ Border#PART_BorderElement">
+            <Setter Property="BorderBrush" Value="{DynamicResource TextControlBorderBrush}" />
+            <Setter Property="BorderThickness" Value="{DynamicResource TextControlBorderThemeThickness}" />
+            <Setter Property="Background" Value="{DynamicResource TextControlBackground}" />
+        </Style>
+    </Window.Styles>
+
+    <Grid ColumnDefinitions="*,Auto" Margin="12">
+        <!-- read-only TextBox so the log can be selected and copied (Ctrl+A / Ctrl+C / right click) -->
+        <TextBox x:Name="textBoxLog" Margin="0,0,6,0" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                 VerticalContentAlignment="Top"
+                 FontFamily="Courier New,Consolas,DejaVu Sans Mono,Liberation Mono,Menlo,monospace"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <TextBox.ContextFlyout>
+                <MenuFlyout>
+                    <MenuItem Header="Copy" Click="logCopy_Click" InputGesture="Ctrl+C" />
+                    <MenuItem Header="Select all" Click="logSelectAll_Click" InputGesture="Ctrl+A" />
+                    <MenuItem Header="Copy all" Click="logCopyAll_Click" />
+                </MenuFlyout>
+            </TextBox.ContextFlyout>
+        </TextBox>
+
+        <DockPanel Grid.Column="1" Width="338">
+            <StackPanel DockPanel.Dock="Bottom" Spacing="2">
+                <HyperlinkButton x:Name="documentation" Content="View documentation" Click="documentation_LinkClicked" />
+                <HyperlinkButton x:Name="linkLabelLogging" Content="Open logging directory" Click="linkLabelLogging_LinkClicked" />
+                <TextBlock x:Name="Minilog" Text="" FontSize="13.5" IsVisible="False" TextTrimming="CharacterEllipsis" />
+                <ProgressBar x:Name="progressBar1" Height="23" Minimum="0" Maximum="100" Margin="0,2,0,0" />
+            </StackPanel>
+
+            <Grid x:Name="buttonPanel" VerticalAlignment="Top"
+                  ColumnDefinitions="107,112,107" RowDefinitions="50,50,50,50,50"
+                  ColumnSpacing="6" RowSpacing="6">
+                <Button x:Name="btnReadDTC" Grid.Row="0" Grid.Column="0" Content="Read ECU DTC" Click="btnReadDTC_Click" />
+                <Button x:Name="btnFlashECU" Grid.Row="0" Grid.Column="1" Content="Flash ECU" Click="btnFlashEcu_Click" />
+                <Button x:Name="btnReadECU" Grid.Row="0" Grid.Column="2" Content="Read ECU" Click="btnReadECU_Click" />
+
+                <Button x:Name="btnEditParameters" Grid.Row="1" Grid.Column="0" Content="Edit Parameters" Click="btnEditParameters_Click" />
+                <Button x:Name="btnGetECUInfo" Grid.Row="1" Grid.Column="1" Content="Get ECU info" Click="btnGetEcuInfo_Click" />
+                <Button x:Name="btnReadSRAM" Grid.Row="1" Grid.Column="2" Content="Read SRAM" Click="btnReadSRAM_Click" />
+
+                <Button x:Name="btnReadECUcalibration" Grid.Row="2" Grid.Column="0" Content="Read ECU calibration" Click="btnReadECUcalibration_Click" />
+                <Button x:Name="btnRecoverECU" Grid.Row="2" Grid.Column="1" Content="Recover ECU" Click="btnRecoverECU_Click" />
+                <Button x:Name="btnRestoreT8" Grid.Row="2" Grid.Column="2" Content="Restore T8" Click="btnRestoreT8_Click" />
+
+                <Button x:Name="btnWriteDID" Grid.Row="3" Grid.Column="0" Content="Write ECU DID" Click="btnWriteDID_Click" />
+                <Button x:Name="btnLogData" Grid.Row="3" Grid.Column="1" Content="Log data" Click="btnLogData_Click" />
+                <Button x:Name="btnSettings" Grid.Row="3" Grid.Column="2" Content="Settings" Click="btnSettings_Click" />
+
+                <Button x:Name="btnCollapse" Grid.Row="4" Grid.Column="0" Width="20" HorizontalAlignment="Left" Padding="0"
+                        Content="&gt;" Click="btnCollapse_Click" />
+                <Button x:Name="btnExpand" Grid.Row="4" Grid.Column="0" Width="20" HorizontalAlignment="Left" Padding="0"
+                        Content="&lt;" IsEnabled="False" IsVisible="False" Click="btnExpand_Click" />
+                <Button x:Name="btnResetECU" Grid.Row="4" Grid.Column="0" Margin="26,0,0,0" Content="Reset ECU" Click="btnResetECU_Click" />
+                <DockPanel Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center">
+                    <TextBlock x:Name="label2" Text="ECU Type" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox x:Name="cbxEcuType" HorizontalAlignment="Stretch" SelectionChanged="cbxEcuType_SelectedIndexChanged" />
+                </DockPanel>
+            </Grid>
+        </DockPanel>
+    </Grid>
+</Window>

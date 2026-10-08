@@ -67,6 +67,7 @@ public class LPCCANDevice : ICANDevice
             // connect to adapter
             combi.Open();
             uint fw_ver = combi.GetFirmwareVersion();
+            CastInformationEvent(String.Format("CombiAdapter firmware v{0}.{1}", fw_ver >> 8, fw_ver & 0xff));
 
             return true;
         }
@@ -74,6 +75,23 @@ public class LPCCANDevice : ICANDevice
         catch (Exception e)
         {
             logger.Debug("Failed to connect to adapter: " + e.Message);
+            combi.Close();
+            CastInformationEvent("CombiAdapter: " + e.Message.Replace('\n', ' '));
+
+            Exception root = e.GetBaseException();
+            if (root is DllNotFoundException)
+            {
+                CastInformationEvent("CombiAdapter needs the libusb-1.0 library (Linux: libusb-1.0-0 package, macOS: brew install libusb)");
+            }
+            else if (OperatingSystem.IsLinux() && root is LibUsbDotNet.LibUsb.UsbException ue && ue.ErrorCode == LibUsbDotNet.Error.Access)
+            {
+                CastInformationEvent("No permission to open the CombiAdapter (USB ffff:0005): copy 70-trioniccanflasher.rules " +
+                    "from the program folder to /etc/udev/rules.d, run 'sudo udevadm control --reload' and replug the adapter");
+            }
+            else if (OperatingSystem.IsWindows() && root is LibUsbDotNet.LibUsb.UsbException we && we.ErrorCode == LibUsbDotNet.Error.NotSupported)
+            {
+                CastInformationEvent("The CombiAdapter needs the WinUSB driver, install it with Zadig (zadig.akeo.ie)");
+            }
             return false;
         }
     }
@@ -127,7 +145,10 @@ public class LPCCANDevice : ICANDevice
 
             // connect to adapter
             logger.Debug("Connecting LPCCanDevice");
-            connect();
+            if (!connect())
+            {
+                return OpenResult.OpenError;
+            }
             logger.Debug("Connected LPCCanDevice");
 
             if (TrionicECU == ECU.TRIONIC5)
@@ -187,18 +208,17 @@ public class LPCCANDevice : ICANDevice
         logger.Debug("Canchannel opened");
         if (read_thread != null)
         {
-            try
+            // no Thread.Abort on .NET; the old reader checks the flag every second
+            lock (term_mutex)
             {
-                read_thread.Abort();
+                term_requested = true;
             }
-            catch (Exception tE)
-            {
-                logger.Debug("Failed to abort thread: " + tE.Message);
-            }
+            read_thread.Join();
         }
         term_requested = false;
         read_thread = new Thread(read_messages); // move here to ensure a new thread is started
         read_thread.Name = "LPCCANDevice.read_thread";
+        read_thread.IsBackground = true;
         read_thread.Start();
     }
 

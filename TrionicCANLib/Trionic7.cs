@@ -38,6 +38,7 @@ namespace TrionicCANLib.API
 
         private readonly System.Timers.Timer tmrReadProcessChecker = new System.Timers.Timer(1000);
         private readonly System.Timers.Timer tmrWriteProcessChecker = new System.Timers.Timer(1000);
+        private readonly object m_timerLock = new object(); // one tick at a time finishes an operation
 
         public Trionic7()
         {
@@ -150,6 +151,13 @@ namespace TrionicCANLib.API
 
                 if (lpc.connect())
                 {
+                    // setCANDevice already started a KWP T7Flasher; its foreground thread would keep the process alive
+                    if (flash != null)
+                    {
+                        flash.onStatusChanged -= flash_onStatusChanged;
+                        flash.cleanup();
+                    }
+
                     // get flasher object
                     flash = lpc.createFlasher();
                     logger.Debug("T7CombiFlasher object created");
@@ -166,7 +174,24 @@ namespace TrionicCANLib.API
                 {
                     CastInfoEvent("Canbus channel opened", ActivityType.ConvertingFile);
 
-                    if (kwpHandler.startSession())
+                    bool started = false;
+                    try
+                    {
+                        started = kwpHandler.startSession();
+                        // the ECU ignores startCommunication while it still holds a session; if a stop
+                        // confirms there was one, the next start is answered at once
+                        if (!started && kwpHandler.stopSession(true))
+                        {
+                            logger.Debug("Ended a session the ECU still held, starting again");
+                            started = kwpHandler.startSession();
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        // e.g. an adapter that refuses a frame: a failed open, not an exception in the GUI
+                        logger.Debug("Starting the session failed: " + e.Message);
+                    }
+                    if (started)
                     {
                         CastInfoEvent("Session started", ActivityType.ConvertingFile);
                     }
@@ -266,8 +291,26 @@ namespace TrionicCANLib.API
                 if (kwpHandler != null)
                 {
                     kwpHandler.EnableLog = false;
-                    kwpHandler.closeDevice();
+                    try
+                    {
+                        // the ECU ignores the next startCommunication until this session ends or times out
+                        kwpHandler.stopSession();
+                    }
+                    finally
+                    {
+                        // also when the stop threw
+                        kwpHandler.closeDevice();
+                    }
                 }
+            }
+            catch (Exception e)
+            {
+                logger.Debug(e.Message);
+            }
+
+            // on its own: whatever failed above, the adapter must not stay open
+            try
+            {
                 if (canUsbDevice != null)
                 {
                     if (canUsbDevice is LPCCANDevice)
@@ -322,6 +365,28 @@ namespace TrionicCANLib.API
                 CastInfoEvent("E85 : " + e85level + "%", ActivityType.ConvertingFile);
         }
 
+        /// <summary>
+        /// Manual ECU reset (Reset ECU button): ECUReset 11 01, answered 51 81, after which the ECU
+        /// waits for its watchdog, a real power-on reset that also ends the EOL loop it stays in after
+        /// a flash. Never call this by itself: in a car with the ignition ON a T7 reset puts the
+        /// electronic throttle body into limp mode, which then has to be reset mechanically.
+        /// </summary>
+        /// <returns>true if the ECU confirmed the reset</returns>
+        public bool ResetECU()
+        {
+            // a session still in the EOL state of a flash: the first 11 01 only ends that state (7F 11 22)
+            for (int i = 0; kwpHandler != null && i < 2; i++)
+            {
+                if (kwpHandler.ResetECU())
+                {
+                    CastInfoEvent("ECU reset", ActivityType.ConvertingFile);
+                    return true;
+                }
+            }
+            CastInfoEvent("ECU did not confirm the reset", ActivityType.ConvertingFile);
+            return false;
+        }
+
         public void ReadFlash(string a_fileName)
         {
             if (CheckFlashStatus())
@@ -357,11 +422,32 @@ namespace TrionicCANLib.API
                 int percentage = ((int)numberkb * 100) / 512;
                 CastProgressReadEvent(percentage);
 
-                if (flash.getStatus() == T7Flasher.FlashStatus.Completed)
+                // the Combi on-device read connects on the caller's (GUI) thread, and ticks wait in the
+                // GUI's progress handler meanwhile, then resume together: only the first may finish the read
+                lock (m_timerLock)
                 {
-                    flash.stopFlasher();
-                    tmrReadProcessChecker.Enabled = false;
-                    CastInfoEvent("Finished download of FLASH", ActivityType.FinishedDownloadingFlash);
+                    if (!tmrReadProcessChecker.Enabled)
+                        return;
+                    T7Flasher.FlashStatus stat = flash.getStatus();
+                    if (stat == T7Flasher.FlashStatus.Completed)
+                    {
+                        flash.stopFlasher();
+                        tmrReadProcessChecker.Enabled = false;
+                        CastInfoEvent("Finished download of FLASH", ActivityType.FinishedDownloadingFlash);
+                    }
+                    // like the write timer: a failed read has to finish too, or the GUI waits forever
+                    else if (stat == T7Flasher.FlashStatus.NoSequrityAccess)
+                    {
+                        flash.stopFlasher();
+                        tmrReadProcessChecker.Enabled = false;
+                        CastInfoEvent("No security access granted", ActivityType.FinishedDownloadingFlash);
+                    }
+                    else if (stat == T7Flasher.FlashStatus.ReadError)
+                    {
+                        flash.stopFlasher();
+                        tmrReadProcessChecker.Enabled = false;
+                        CastInfoEvent("Failed to download FLASH content", ActivityType.FinishedDownloadingFlash);
+                    }
                 }
             }
         }
@@ -375,38 +461,45 @@ namespace TrionicCANLib.API
                 int percentage = ((int)numberkb * 100) / 512;
                 CastProgressWriteEvent(percentage);
 
-                T7Flasher.FlashStatus stat = flash.getStatus();
-                logger.Debug("tmrWriteProcessChecker_Tick: " + stat.ToString());
+                // see tmrReadProcessChecker_Tick: after a failed on-device connect a second waiting tick
+                // saw T7CombiFlasher's Completed (set by the first tick's stopFlasher), "Finished FLASH session"
+                lock (m_timerLock)
+                {
+                    if (!tmrWriteProcessChecker.Enabled)
+                        return;
+                    T7Flasher.FlashStatus stat = flash.getStatus();
+                    logger.Debug("tmrWriteProcessChecker_Tick: " + stat.ToString());
 
-                if (stat == T7Flasher.FlashStatus.Completed)
-                {
-                    flash.stopFlasher();
-                    tmrWriteProcessChecker.Enabled = false;
-                    CastInfoEvent("Finished FLASH session", ActivityType.FinishedFlashing);
-                }
-                else if (stat == T7Flasher.FlashStatus.NoSequrityAccess)
-                {
-                    flash.stopFlasher();
-                    tmrWriteProcessChecker.Enabled = false;
-                    CastInfoEvent("No security access granted", ActivityType.FinishedFlashing);
-                }
-                else if (stat == T7Flasher.FlashStatus.EraseError)
-                {
-                    flash.stopFlasher();
-                    tmrWriteProcessChecker.Enabled = false;
-                    CastInfoEvent("An erase error occured", ActivityType.FinishedFlashing);
-                }
-                else if (stat == T7Flasher.FlashStatus.NoSuchFile)
-                {
-                    flash.stopFlasher();
-                    tmrWriteProcessChecker.Enabled = false;
-                    CastInfoEvent("File not found", ActivityType.FinishedFlashing);
-                }
-                else if (stat == T7Flasher.FlashStatus.WriteError)
-                {
-                    flash.stopFlasher();
-                    tmrWriteProcessChecker.Enabled = false;
-                    CastInfoEvent("A write error occured, please retry to FLASH without cutting power to the ECU", ActivityType.FinishedFlashing);
+                    if (stat == T7Flasher.FlashStatus.Completed)
+                    {
+                        flash.stopFlasher();
+                        tmrWriteProcessChecker.Enabled = false;
+                        CastInfoEvent("Finished FLASH session", ActivityType.FinishedFlashing);
+                    }
+                    else if (stat == T7Flasher.FlashStatus.NoSequrityAccess)
+                    {
+                        flash.stopFlasher();
+                        tmrWriteProcessChecker.Enabled = false;
+                        CastInfoEvent("No security access granted", ActivityType.FinishedFlashing);
+                    }
+                    else if (stat == T7Flasher.FlashStatus.EraseError)
+                    {
+                        flash.stopFlasher();
+                        tmrWriteProcessChecker.Enabled = false;
+                        CastInfoEvent("An erase error occured", ActivityType.FinishedFlashing);
+                    }
+                    else if (stat == T7Flasher.FlashStatus.NoSuchFile)
+                    {
+                        flash.stopFlasher();
+                        tmrWriteProcessChecker.Enabled = false;
+                        CastInfoEvent("File not found", ActivityType.FinishedFlashing);
+                    }
+                    else if (stat == T7Flasher.FlashStatus.WriteError)
+                    {
+                        flash.stopFlasher();
+                        tmrWriteProcessChecker.Enabled = false;
+                        CastInfoEvent("A write error occured, please retry to FLASH without cutting power to the ECU", ActivityType.FinishedFlashing);
+                    }
                 }
             }
         }
@@ -495,6 +588,14 @@ namespace TrionicCANLib.API
                             {
                                 logger.Debug("Failed to read data. sendRequestDataByOffset: " + curaddress.ToString("X8"));
                                 CastInfoEvent("Failed to read data. sendRequestDataByOffset: " + curaddress.ToString("X8"), ActivityType.FinishedDownloadingFlash);
+                                return false;
+                            }
+                            if (data.Length != blockSize)
+                            {
+                                // a negative reply (7F 21 12 from an ECU still in its EOL loop after a
+                                // flash) carries one byte, which went into the file as a whole block
+                                logger.Debug("Failed to read data. Reply length " + data.Length + ": " + curaddress.ToString("X8"));
+                                CastInfoEvent("Failed to read data. Reply length " + data.Length + ": " + curaddress.ToString("X8"), ActivityType.FinishedDownloadingFlash);
                                 return false;
                             }
                         }

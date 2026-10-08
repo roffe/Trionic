@@ -1,0 +1,54 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TrionicCANFlasher.EditParameters"
+        Title="Edit Parameters"
+        Icon="/TrionicCanFlasher.ico"
+        SizeToContent="WidthAndHeight"
+        CanResize="False"
+        CanMinimize="False"
+        CanMaximize="False"
+        WindowStartupLocation="CenterOwner">
+  <Window.Styles>
+    <!-- not Grid.RowSpacing: that keeps spacing for the rows setECU hides -->
+    <Style Selector="TextBox, ComboBox">
+      <Setter Property="Margin" Value="0,2" />
+    </Style>
+  </Window.Styles>
+  <StackPanel Margin="12" Spacing="8">
+    <GroupBox x:Name="groupBox1" Header="Fields">
+      <Grid ColumnDefinitions="Auto,200" ColumnSpacing="12"
+            RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+        <TextBlock x:Name="label1" Grid.Row="0" Text="VIN (17 characters)" VerticalAlignment="Center" IsVisible="{Binding #tbVIN.IsVisible}" />
+        <TextBox x:Name="tbVIN" Grid.Row="0" Grid.Column="1" />
+        <TextBlock x:Name="label4" Grid.Row="1" Text="E85%" VerticalAlignment="Center" IsVisible="{Binding #tbE85.IsVisible}" />
+        <TextBox x:Name="tbE85" Grid.Row="1" Grid.Column="1" />
+        <TextBlock x:Name="label3" Grid.Row="2" Text="Top Speed (km/h)" VerticalAlignment="Center" IsVisible="{Binding #tbTopSpeed.IsVisible}" />
+        <TextBox x:Name="tbTopSpeed" Grid.Row="2" Grid.Column="1" />
+        <TextBlock x:Name="label5" Grid.Row="3" Text="Oil Quality%" VerticalAlignment="Center" IsVisible="{Binding #tbOilQuality.IsVisible}" />
+        <TextBox x:Name="tbOilQuality" Grid.Row="3" Grid.Column="1" />
+        <TextBlock x:Name="label6" Grid.Row="4" Text="Diagnostic Type" VerticalAlignment="Center" IsVisible="{Binding #comboBoxDiag.IsVisible}" />
+        <ComboBox x:Name="comboBoxDiag" Grid.Row="4" Grid.Column="1" HorizontalAlignment="Stretch">
+          <ComboBoxItem>None</ComboBoxItem>
+          <ComboBoxItem>OBD2</ComboBoxItem>
+          <ComboBoxItem>EOBD</ComboBoxItem>
+          <ComboBoxItem>LOBD</ComboBoxItem>
+        </ComboBox>
+        <TextBlock x:Name="label7" Grid.Row="5" Text="Tank Type" VerticalAlignment="Center" IsVisible="{Binding #comboBoxTank.IsVisible}" />
+        <ComboBox x:Name="comboBoxTank" Grid.Row="5" Grid.Column="1" HorizontalAlignment="Stretch">
+          <ComboBoxItem>US</ComboBoxItem>
+          <ComboBoxItem>EU</ComboBoxItem>
+          <ComboBoxItem>AWD</ComboBoxItem>
+        </ComboBox>
+        <CheckBox x:Name="cbCab" Grid.Row="6" Grid.Column="1" Content="Convertible" />
+        <CheckBox x:Name="cbSAI" Grid.Row="7" Grid.Column="1" Content="SAI" />
+        <CheckBox x:Name="cbOutput" Grid.Row="8" Grid.Column="1" Content="High output" />
+        <CheckBox x:Name="cbBiopower" Grid.Row="9" Grid.Column="1" Content="Biopower" />
+        <CheckBox x:Name="cbClutchStart" Grid.Row="10" Grid.Column="1" Content="Clutch Start" />
+      </Grid>
+    </GroupBox>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+      <Button x:Name="btnWriteToECU" Content="Write Fields to ECU" IsDefault="True" Click="btnWriteToECU_Click" />
+      <Button x:Name="closeButton" Content="Close" IsCancel="True" MinWidth="75" HorizontalContentAlignment="Center" Click="closeButton_Click" />
+    </StackPanel>
+  </StackPanel>
+</Window>
