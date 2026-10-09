@@ -292,6 +292,27 @@ namespace TrionicCANFlasher
             textBoxLog.Copy();
         }
 
+        // ECU strings arrive NUL-padded (T8 info: "55561881\0\0"); a NUL in a selection makes the
+        // Linux clipboard come back empty, so control characters never reach the log
+        private static string CleanForLog(string s)
+        {
+            System.Text.StringBuilder sb = null;
+            for (int i = 0; i < s.Length; i++)
+            {
+                char c = s[i];
+                bool bad = char.IsControl(c) && c != '\t' && c != '\r' && c != '\n';
+                if (bad && sb == null)
+                {
+                    sb = new System.Text.StringBuilder(s, 0, i, s.Length);
+                }
+                if (sb != null && c != '\0')
+                {
+                    sb.Append(bad ? '?' : c);
+                }
+            }
+            return sb == null ? s : sb.ToString();
+        }
+
         public void AddLogItem(string item)
         {
             // T5/T7 checksum callbacks pass a null layer; WinForms threw on that in compact view
@@ -299,6 +320,7 @@ namespace TrionicCANFlasher
             {
                 return;
             }
+            item = CleanForLog(item);
 
             if (!Dispatcher.UIThread.CheckAccess())
             {
