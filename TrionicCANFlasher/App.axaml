@@ -3,7 +3,19 @@
              x:Class="TrionicCANFlasher.App"
              RequestedThemeVariant="Default">
     <Application.Styles>
-        <FluentTheme />
+        <FluentTheme>
+            <FluentTheme.Palettes>
+                <!-- Fluent's dark palette is built on pure black; use neutral greys like Windows 11 / VS Code instead -->
+                <ColorPaletteResources x:Key="Dark"
+                                       RegionColor="#FF202020"
+                                       AltHigh="#FF1B1B1B" AltMediumHigh="#CC1B1B1B" AltMedium="#991B1B1B"
+                                       AltMediumLow="#661B1B1B" AltLow="#331B1B1B"
+                                       ChromeLow="#FF1E1E1E" ChromeMedium="#FF282828" ChromeMediumLow="#FF323232"
+                                       ChromeBlackHigh="#FF141414" ChromeBlackMedium="#CC141414"
+                                       ChromeBlackMediumLow="#99141414" ChromeBlackLow="#33141414"
+                                       BaseLow="#1CFFFFFF" BaseMediumLow="#40FFFFFF" />
+            </FluentTheme.Palettes>
+        </FluentTheme>
         <!-- WinForms buttons centre their text, Fluent's left-align it -->
         <Style Selector="Button">
             <Setter Property="HorizontalContentAlignment" Value="Center" />
