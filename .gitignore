@@ -238,3 +238,5 @@ project.lock.json
 project.assets.json
 *.nuget.props
 .vs
+# bench tooling output: logs, dumps, lock, build (never commit ECU dumps)
+tools/bench/out/
