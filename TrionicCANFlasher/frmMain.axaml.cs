@@ -41,6 +41,12 @@ namespace TrionicCANFlasher
         private bool m_bypassCANfilters = false; // Christian: Stop-gap solution for now.
         private WindowState LastWindowState = WindowState.Normal;
 
+        // set by EnableUserInput: every ECU operation starts with EnableUserInput(false) and ends with EnableUserInput(true)
+        private bool m_operationRunning = false;
+        private bool m_closeRefusedShown = false;
+        // a T7 flash or read, which Trionic7 runs on its own threads and ends in updateStatusInBox
+        private bool m_t7FlashRunning = false;
+
         // compact view is the button panel only, its height follows the content
         private const double CompactWidth = 360;
 
@@ -118,6 +124,26 @@ namespace TrionicCANFlasher
 
         private void frmMain_FormClosing(object sender, WindowClosingEventArgs e)
         {
+            // the window stays responsive during an operation, closing it mid-flash would leave the ECU half written
+            if (m_operationRunning)
+            {
+                e.Cancel = true;
+                if (!m_closeRefusedShown)
+                {
+                    m_closeRefusedShown = true;
+                    // a logger that ended by itself leaves the button saying Stop
+                    bool logging = (string)btnLogData.Content == "Stop" && bgworkerLogCanData != null && bgworkerLogCanData.IsBusy;
+                    string text = logging ? "Logging is running, press Stop before closing." :
+                        "An ECU operation is running, wait until it finishes before closing.";
+                    Dispatcher.UIThread.Post(async () =>
+                    {
+                        await Dialogs.Info(this, text, "Operation running");
+                        m_closeRefusedShown = false;
+                    });
+                }
+                return;
+            }
+
             AppSettings.Save();
             trionic8.Cleanup();
             trionic7.Cleanup();
@@ -178,7 +204,7 @@ namespace TrionicCANFlasher
                     {
                         if (m_msiUpdater != null)
                         {
-                            if (!trionic5.isOpen() && !trionic7.isOpen() && !trionic8.isOpen())
+                            if (!m_operationRunning && !trionic5.isOpen() && !trionic7.isOpen() && !trionic8.isOpen())
                             {
                                 m_msiUpdater.ExecuteUpdate(e.MSIFile);
                                 // the msi replaces us; elsewhere only the release page was opened
@@ -315,28 +341,6 @@ namespace TrionicCANFlasher
                 textBoxLog.CaretIndex = textBoxLog.Text.Length; // follow the newest line
             }
             logger.Trace(item);
-            DoEvents();
-        }
-
-        // ponytail: stand-in for WinForms Application.DoEvents. GetECUInfo, DTC, T5 flash etc. still run on
-        // the UI thread like they always did, so the window only repaints between log lines; moving them to
-        // Task.Run is the real fix once they stop touching controls.
-        private void DoEvents()
-        {
-            if (!IsVisible)
-            {
-                return;
-            }
-            try
-            {
-                var frame = new DispatcherFrame();
-                Dispatcher.UIThread.Post(() => frame.Continue = false, DispatcherPriority.Background);
-                Dispatcher.UIThread.PushFrame(frame);
-            }
-            catch (InvalidOperationException)
-            {
-                // dispatcher suspended (inside a render pass) or shutting down
-            }
         }
 
         void trionicCan_onWriteProgress(object sender, ITrionic.WriteProgressEventArgs e)
@@ -354,7 +358,7 @@ namespace TrionicCANFlasher
             UpdateProgressStatus(e.Percentage);
         }
 
-        private void updateStatusInBox(ITrionic.CanInfoEventArgs e)
+        private async void updateStatusInBox(ITrionic.CanInfoEventArgs e)
         {
             AddLogItem(e.Info);
             if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC7)
@@ -363,19 +367,31 @@ namespace TrionicCANFlasher
                 {
                     TimeSpan ts = DateTime.Now - dtstart;
                     AddLogItem("Total duration: " + ts.Minutes + " minutes " + ts.Seconds + " seconds");
-                    trionic7.Cleanup();
-                    AddLogItem("Connection closed");
-                    EnableUserInput(true);
+                    // Read SRAM reports FinishedDownloadingFlash too, its worker closes its own connection
+                    if (m_t7FlashRunning)
+                    {
+                        m_t7FlashRunning = false;
+                        await RunOnWorker(trionic7, trionic7.Cleanup);
+                        AddLogItem("Connection closed");
+                        EnableUserInput(true);
+                    }
                 }
             }
         }
 
-        // Control.Invoke semantics: runs inline on the UI thread, otherwise blocks the caller until done
+        // Like AddLogItem: the library's threads queue it behind the lines they logged before and go on. Waiting for
+        // the window like Control.Invoke made them deadlocks against a UI thread that waits for them.
         private void UpdateFlashStatus(ITrionic.CanInfoEventArgs e)
         {
+            if (!Dispatcher.UIThread.CheckAccess())
+            {
+                Dispatcher.UIThread.Post(() => UpdateFlashStatus(e));
+                return;
+            }
+
             try
             {
-                Dispatcher.UIThread.Invoke(() => m_DelegateUpdateStatus(e));
+                m_DelegateUpdateStatus(e);
             }
             catch (Exception ex)
             {
@@ -397,9 +413,15 @@ namespace TrionicCANFlasher
 
         private void UpdateProgressStatus(int percentage)
         {
+            if (!Dispatcher.UIThread.CheckAccess())
+            {
+                Dispatcher.UIThread.Post(() => UpdateProgressStatus(percentage));
+                return;
+            }
+
             try
             {
-                Dispatcher.UIThread.Invoke(() => m_DelegateProgressStatus(percentage));
+                m_DelegateProgressStatus(percentage);
             }
             catch (Exception e)
             {
@@ -420,8 +442,12 @@ namespace TrionicCANFlasher
             bgworkerLogCanData.RunWorkerAsync();
         }
 
-        void bgWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
+        async void bgWorker_RunWorkerCompleted(object sender, RunWorkerCompletedEventArgs e)
         {
+            // reported at the click handler's priority, ahead of the operation's last log lines and progress that
+            // are still queued at Default: let those come first
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Default);
+
             if (e.Cancelled)
             {
                 AddLogItem("Stopped");
@@ -446,11 +472,11 @@ namespace TrionicCANFlasher
             AddLogItem("Total duration: " + ts.Minutes + " minutes " + ts.Seconds + " seconds");
             if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC5)
             {
-                trionic5.Cleanup();
+                await RunOnWorker(trionic5, trionic5.Cleanup);
             }
             else if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC7)
             {
-                trionic7.Cleanup();
+                await RunOnWorker(trionic7, trionic7.Cleanup);
             }
             else if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC8 ||
                      cbxEcuType.SelectedIndex == (int)ECU.MOTRONIC96 ||
@@ -458,7 +484,7 @@ namespace TrionicCANFlasher
                      cbxEcuType.SelectedIndex == (int)ECU.Z22SEMain_LEG ||
                      cbxEcuType.SelectedIndex == (int)ECU.Z22SEMCP_LEG)
             {
-                trionic8.Cleanup();
+                await RunOnWorker(trionic8, trionic8.Cleanup);
             }
             EnableUserInput(true);
             AddLogItem("Connection terminated");
@@ -632,8 +658,86 @@ namespace TrionicCANFlasher
             return true;
         }
 
+        /// <summary>
+        /// Runs an ECU operation off the UI thread, so the window keeps repainting and its log and progress bar
+        /// follow the operation. Keep open, operation and Cleanup in one body: KWPHandler's Mutex is thread-affine
+        /// and the libraries expect one thread per session. AboveNormal, like the UI thread these used to run on.
+        /// A body that throws is logged and its connection cleaned up on that same thread.
+        /// </summary>
+        /// <returns>false if the body threw</returns>
+        private Task<bool> RunOnWorker(ITrionic trionic, Action body)
+        {
+            var done = new TaskCompletionSource<bool>();
+            var worker = new Thread(() =>
+            {
+                bool ok = true;
+                try
+                {
+                    body();
+                }
+                catch (Exception ex)
+                {
+                    ok = false;
+                    logger.Trace(ex);
+                    AddLogItem(ex.Message);
+                    try
+                    {
+                        trionic.Cleanup();
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        logger.Trace(cleanupEx);
+                    }
+                }
+                // not the caller's continuation directly: it would run at the click handler's priority, ahead of
+                // the log lines and progress this operation queued at Default
+                Dispatcher.UIThread.Post(() => done.SetResult(ok));
+            })
+            {
+                IsBackground = true,
+                Name = "ECU operation",
+            };
+            try { worker.Priority = ThreadPriority.AboveNormal; } catch (Exception) { }
+            worker.Start();
+            return done.Task;
+        }
+
+        /// <summary>
+        /// What a BackgroundWorker operation does before RunWorkerAsync, on a worker: open, the second these flows
+        /// always waited, then startMessage. When it doesn't open: failMessage, Cleanup, and the input comes back.
+        /// </summary>
+        /// <returns>true: start the BackgroundWorker</returns>
+        private async Task<bool> OpenOnWorker(ITrionic trionic, Func<bool> open, string startMessage, string failMessage)
+        {
+            bool opened = false;
+            bool ok = await RunOnWorker(trionic, () =>
+            {
+                opened = open();
+                if (opened)
+                {
+                    Thread.Sleep(1000);
+                    dtstart = DateTime.Now;
+                    AddLogItem(startMessage);
+                }
+                else
+                {
+                    AddLogItem(failMessage);
+                    trionic.Cleanup();
+                }
+            });
+            opened = opened && ok;
+            if (!opened)
+            {
+                EnableUserInput(true);
+                AddLogItem("Connection terminated");
+            }
+            return opened;
+        }
+
         private void EnableUserInput(bool enable)
         {
+            m_operationRunning = !enable;
+
             btnFlashECU.IsEnabled = enable;
             btnReadECU.IsEnabled = enable;
             btnGetECUInfo.IsEnabled = enable;
@@ -814,21 +918,49 @@ namespace TrionicCANFlasher
                         SetGenericOptions(trionic5);
                         AddLogItem("Opening connection");
                         EnableUserInput(false);
-                        if (trionic5.openDevice())
+                        bool opened = false;
+                        WriteFlashResult flashed = WriteFlashResult.Failed;
+                        await RunOnWorker(trionic5, () =>
                         {
-                            Thread.Sleep(1000);
-                            AddLogItem("Update FLASH content");
-                            DoEvents();
-                            dtstart = DateTime.Now;
-                            trionic5.WriteFlash(fileName);
+                            opened = trionic5.openDevice();
+                            if (opened)
+                            {
+                                Thread.Sleep(1000);
+                                AddLogItem("Update FLASH content");
+                                dtstart = DateTime.Now;
+                                flashed = trionic5.WriteFlash(fileName);
+                            }
+                            else
+                            {
+                                AddLogItem("Unable to connect to Trionic 5 ECU");
+                            }
+                            // no reset after a failure: the retry that WriteFlash advises reuses the running bootloader
                             trionic5.Cleanup();
-                            EnableUserInput(true);
+                        });
+                        EnableUserInput(true);
+                        if (opened)
+                        {
+                            // the library logged what went wrong and what to do; a collapsed window would only show its last line
+                            if (flashed == WriteFlashResult.Done)
+                            {
+                                AddLogItem("Operation done");
+                            }
+                            else if (flashed != WriteFlashResult.Cancelled)
+                            {
+                                AddLogItem("Operation failed");
+                                SetViewMode(false);
+                            }
+                            TimeSpan ts = DateTime.Now - dtstart;
+                            AddLogItem("Total duration: " + ts.Minutes + " minutes " + ts.Seconds + " seconds");
+                            if (flashed == WriteFlashResult.Cancelled)
+                            {
+                                // the user said No or the file doesn't fit the ECU: the FLASH was not touched. Last line, as the
+                                // window stays collapsed: the duration under a full progress bar would look like a finished flash
+                                AddLogItem("Operation cancelled");
+                            }
                         }
                         else
                         {
-                            AddLogItem("Unable to connect to Trionic 5 ECU");
-                            trionic5.Cleanup();
-                            EnableUserInput(true);
                             AddLogItem("Connection terminated");
                         }
                     }
@@ -846,18 +978,28 @@ namespace TrionicCANFlasher
 
                         AddLogItem("Opening connection");
                         EnableUserInput(false);
-                        if (trionic7.openDevice())
+                        // the flash continues on Trionic7's threads, updateStatusInBox ends it
+                        m_t7FlashRunning = true;
+                        bool opened = false;
+                        bool ok = await RunOnWorker(trionic7, () =>
                         {
-                            Thread.Sleep(1000);
-                            AddLogItem("Update FLASH content");
-                            DoEvents();
-                            dtstart = DateTime.Now;
-                            trionic7.WriteFlash(fileName);
-                        }
-                        else
+                            opened = trionic7.openDevice();
+                            if (opened)
+                            {
+                                Thread.Sleep(1000);
+                                AddLogItem("Update FLASH content");
+                                dtstart = DateTime.Now;
+                                trionic7.WriteFlash(fileName);
+                            }
+                            else
+                            {
+                                AddLogItem("Unable to connect to Trionic 7 ECU");
+                                trionic7.Cleanup();
+                            }
+                        });
+                        if (!opened || !ok)
                         {
-                            AddLogItem("Unable to connect to Trionic 7 ECU");
-                            trionic7.Cleanup();
+                            m_t7FlashRunning = false;
                             EnableUserInput(true);
                             AddLogItem("Connection terminated");
                         }
@@ -877,12 +1019,8 @@ namespace TrionicCANFlasher
                         AddLogItem("Opening connection");
                         trionic8.SecurityLevel = AccessLevel.AccessLevel01;
 
-                        if (trionic8.openDevice(false))
+                        if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Update FLASH content", "Unable to connect to Trionic 8 ECU"))
                         {
-                            Thread.Sleep(1000);
-                            dtstart = DateTime.Now;
-                            AddLogItem("Update FLASH content");
-                            DoEvents();
                             BackgroundWorker bgWorker;
                             bgWorker = new BackgroundWorker();
                             if (AppSettings.UseLegion)
@@ -896,13 +1034,6 @@ namespace TrionicCANFlasher
                             bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                             bgWorker.RunWorkerAsync(fileName);
                         }
-                        else
-                        {
-                            AddLogItem("Unable to connect to Trionic 8 ECU");
-                            trionic8.Cleanup();
-                            EnableUserInput(true);
-                            AddLogItem("Connection terminated");
-                        }
                     }
                     else if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC8_MCP)
                     {
@@ -914,24 +1045,13 @@ namespace TrionicCANFlasher
 
                         trionic8.FormatSystemPartitions = true; // This is undefined in mcp.
 
-                        if (trionic8.openDevice(false))
+                        if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Update FLASH content", "Unable to connect to Trionic 8 ECU"))
                         {
-                            Thread.Sleep(1000);
-                            dtstart = DateTime.Now;
-                            AddLogItem("Update FLASH content");
-                            DoEvents();
                             BackgroundWorker bgWorker;
                             bgWorker = new BackgroundWorker();
                             bgWorker.DoWork += new DoWorkEventHandler(trionic8.WriteFlashLegMCP);
                             bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                             bgWorker.RunWorkerAsync(fileName);
-                        }
-                        else
-                        {
-                            AddLogItem("Unable to connect to Trionic 8 ECU");
-                            trionic8.Cleanup();
-                            EnableUserInput(true);
-                            AddLogItem("Connection terminated");
                         }
                     }
                     else if (cbxEcuType.SelectedIndex == (int)ECU.Z22SEMain_LEG)
@@ -945,24 +1065,13 @@ namespace TrionicCANFlasher
                         trionic8.FormatSystemPartitions = true;
                         trionic8.FormatBootPartition    = true;
 
-                        if (trionic8.openDevice(false))
+                        if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Update FLASH content", "Unable to connect to Z22SE ECU"))
                         {
-                            Thread.Sleep(1000);
-                            dtstart = DateTime.Now;
-                            AddLogItem("Update FLASH content");
-                            DoEvents();
                             BackgroundWorker bgWorker;
                             bgWorker = new BackgroundWorker();
                             bgWorker.DoWork += new DoWorkEventHandler(trionic8.WriteFlashLegZ22SE_Main);
                             bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                             bgWorker.RunWorkerAsync(fileName);
-                        }
-                        else
-                        {
-                            AddLogItem("Unable to connect to Z22SE ECU");
-                            trionic8.Cleanup();
-                            EnableUserInput(true);
-                            AddLogItem("Connection terminated");
                         }
                     }
                     else if (cbxEcuType.SelectedIndex == (int)ECU.Z22SEMCP_LEG)
@@ -976,24 +1085,13 @@ namespace TrionicCANFlasher
                         trionic8.FormatSystemPartitions = true; // This is undefined in mcp.
                         trionic8.FormatBootPartition    = true;
 
-                        if (trionic8.openDevice(false))
+                        if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Update FLASH content", "Unable to connect to Z22SE ECU"))
                         {
-                            Thread.Sleep(1000);
-                            dtstart = DateTime.Now;
-                            AddLogItem("Update FLASH content");
-                            DoEvents();
                             BackgroundWorker bgWorker;
                             bgWorker = new BackgroundWorker();
                             bgWorker.DoWork += new DoWorkEventHandler(trionic8.WriteFlashLegZ22SE_MCP);
                             bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                             bgWorker.RunWorkerAsync(fileName);
-                        }
-                        else
-                        {
-                            AddLogItem("Unable to connect to Z22SE ECU");
-                            trionic8.Cleanup();
-                            EnableUserInput(true);
-                            AddLogItem("Connection terminated");
                         }
                     }
                     else if (cbxEcuType.SelectedIndex == (int)ECU.MOTRONIC96)
@@ -1003,122 +1101,133 @@ namespace TrionicCANFlasher
                         EnableUserInput(false);
                         AddLogItem("Opening connection");
                         trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                        if (trionic8.openDevice(false))
+                        // the questions below block the worker until answered, the connection stays with it
+                        FlashReadArguments args = null;
+                        await RunOnWorker(trionic8, () =>
                         {
-                            string ecuCalibrationset = trionic8.GetCalibrationSet();
-                            ecuCalibrationset = SubString8(ecuCalibrationset);
-                            if (ecuCalibrationset == "")
+                            if (trionic8.openDevice(false))
                             {
-                                AddLogItem("ECU connection issue, check logs");
+                                string ecuCalibrationset = trionic8.GetCalibrationSet();
+                                ecuCalibrationset = SubString8(ecuCalibrationset);
+                                if (ecuCalibrationset == "")
+                                {
+                                    AddLogItem("ECU connection issue, check logs");
+                                    // this used to end here with the input disabled for good; the window can't be
+                                    // closed during an operation, so it cleans up and gives the input back like the others
+                                    trionic8.Cleanup();
+                                }
+                                else
+                                {
+                                    string ecuMainOS = trionic8.RequestECUInfoAsString(0xC1);
+                                    ecuMainOS = SubString8(ecuMainOS);
+                                    string ecuEngineCalib = trionic8.RequestECUInfoAsString(0xC2);
+                                    ecuEngineCalib = SubString8(ecuEngineCalib);
+                                    string ecuSystemCalib = trionic8.RequestECUInfoAsString(0xC3);
+                                    ecuSystemCalib = SubString8(ecuSystemCalib);
+                                    string ecuSpeedoCalib = trionic8.RequestECUInfoAsString(0xC4);
+                                    ecuSpeedoCalib = SubString8(ecuSpeedoCalib);
+                                    string ecuSlaveOS = trionic8.RequestECUInfoAsString(0xC5);
+                                    ecuSlaveOS = SubString8(ecuSlaveOS);
+
+                                    bool flash = true;
+                                    int flashStart = (int)FileME96.EngineCalibrationAddress;
+                                    int flashEnd = (int)FileME96.EngineCalibrationAddressEnd;
+
+                                    string fileMainOS = FileME96.getMainOSVersion(fileName);
+                                    AddLogItem("Main OS version in file: " + fileMainOS);
+                                    if (fileMainOS != string.Empty)
+                                    {
+                                        AddLogItem("Main OS version in ECU: " + ecuMainOS);
+
+                                        // Certain vendors are known to poke around in OS and leave version number the same
+                                        if (ecuMainOS == fileMainOS && AppSettings.PowerUser)
+                                        {
+                                            bool ask = Dialogs.Wait(() => Dialogs.YesNo(this, "Version numbers match. Do you still want to overwrite Main OS?\n" +
+                                                "Click No to only write calibration", "Overwrite Main OS?"));
+
+                                            if (ask)
+                                            {
+                                                AddLogItem("User has opted to overwrite Main OS");
+                                                FileInfo fi = new FileInfo(fileName);
+                                                flashStart = (int)FileME96.MainOSAddress;
+                                                flashEnd = (int)fi.Length;
+                                            }
+                                            else
+                                            {
+                                                flash = FlashEngineCalibration(fileName, ecuEngineCalib);
+                                            }
+                                        }
+
+                                        else if (ecuMainOS != fileMainOS)
+                                        {
+                                            AddLogItem("Main OS version differs between file and ECU");
+
+                                            if (AppSettings.UnlockSys)
+                                            {
+                                                AddLogItem("User has selected option format system partitions");
+                                                FileInfo fi = new FileInfo(fileName);
+                                                flashStart = (int)FileME96.MainOSAddress;
+                                                flashEnd = (int)fi.Length;
+                                            }
+                                            else
+                                            {
+                                                AddLogItem("Aborted flash, format system partitions is unchecked");
+                                                flash = false;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            flash = FlashEngineCalibration(fileName, ecuEngineCalib);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // Or just force the user to read the complete ecu instead.
+
+                                        // Check that the basefile version is matched with beginning of calibrationset
+                                        string basefileInfo = FileME96.getFileInfo(fileName);
+                                        if (!basefileInfo.Contains(ecuCalibrationset.Substring(0, 4)))
+                                        {
+                                            AddLogItem("Basefile and file to write is not compatible " + basefileInfo + " and " + ecuCalibrationset);
+                                            flash = false;
+                                        }
+                                        else
+                                        {
+                                            flash = FlashEngineCalibration(fileName, ecuEngineCalib);
+                                        }
+                                    }
+
+                                    if (flash)
+                                    {
+                                        AddLogItem("Flash addresses start:" + flashStart.ToString("X") + " and end: " + flashEnd.ToString("X"));
+                                        Thread.Sleep(1000);
+                                        dtstart = DateTime.Now;
+                                        AddLogItem("Update FLASH content");
+                                        args = new FlashReadArguments() { FileName = fileName, start = flashStart, end = flashEnd };
+                                    }
+                                    else
+                                    {
+                                        AddLogItem("Flash operation aborted");
+                                        trionic8.Cleanup();
+                                    }
+                                }
                             }
                             else
                             {
-                                string ecuMainOS = trionic8.RequestECUInfoAsString(0xC1);
-                                ecuMainOS = SubString8(ecuMainOS);
-                                string ecuEngineCalib = trionic8.RequestECUInfoAsString(0xC2);
-                                ecuEngineCalib = SubString8(ecuEngineCalib);
-                                string ecuSystemCalib = trionic8.RequestECUInfoAsString(0xC3);
-                                ecuSystemCalib = SubString8(ecuSystemCalib);
-                                string ecuSpeedoCalib = trionic8.RequestECUInfoAsString(0xC4);
-                                ecuSpeedoCalib = SubString8(ecuSpeedoCalib);
-                                string ecuSlaveOS = trionic8.RequestECUInfoAsString(0xC5);
-                                ecuSlaveOS = SubString8(ecuSlaveOS);
-
-                                bool flash = true;
-                                int flashStart = (int)FileME96.EngineCalibrationAddress;
-                                int flashEnd = (int)FileME96.EngineCalibrationAddressEnd;
-
-                                string fileMainOS = FileME96.getMainOSVersion(fileName);
-                                AddLogItem("Main OS version in file: " + fileMainOS);
-                                if (fileMainOS != string.Empty)
-                                {
-                                    AddLogItem("Main OS version in ECU: " + ecuMainOS);
-
-                                    // Certain vendors are known to poke around in OS and leave version number the same
-                                    if (ecuMainOS == fileMainOS && AppSettings.PowerUser)
-                                    {
-                                        bool ask = await Dialogs.YesNo(this, "Version numbers match. Do you still want to overwrite Main OS?\n" +
-                                            "Click No to only write calibration", "Overwrite Main OS?");
-
-                                        if (ask)
-                                        {
-                                            AddLogItem("User has opted to overwrite Main OS");
-                                            FileInfo fi = new FileInfo(fileName);
-                                            flashStart = (int)FileME96.MainOSAddress;
-                                            flashEnd = (int)fi.Length;
-                                        }
-                                        else
-                                        {
-                                            flash = await FlashEngineCalibration(fileName, ecuEngineCalib);
-                                        }
-                                    }
-
-                                    else if (ecuMainOS != fileMainOS)
-                                    {
-                                        AddLogItem("Main OS version differs between file and ECU");
-
-                                        if (AppSettings.UnlockSys)
-                                        {
-                                            AddLogItem("User has selected option format system partitions");
-                                            FileInfo fi = new FileInfo(fileName);
-                                            flashStart = (int)FileME96.MainOSAddress;
-                                            flashEnd = (int)fi.Length;
-                                        }
-                                        else
-                                        {
-                                            AddLogItem("Aborted flash, format system partitions is unchecked");
-                                            flash = false;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        flash = await FlashEngineCalibration(fileName, ecuEngineCalib);
-                                    }
-                                }
-                                else
-                                {
-                                    // Or just force the user to read the complete ecu instead.
-
-                                    // Check that the basefile version is matched with beginning of calibrationset
-                                    string basefileInfo = FileME96.getFileInfo(fileName);
-                                    if (!basefileInfo.Contains(ecuCalibrationset.Substring(0, 4)))
-                                    {
-                                        AddLogItem("Basefile and file to write is not compatible " + basefileInfo + " and " + ecuCalibrationset);
-                                        flash = false;
-                                    }
-                                    else
-                                    {
-                                        flash = await FlashEngineCalibration(fileName, ecuEngineCalib);
-                                    }
-                                }
-
-                                if (flash)
-                                {
-                                    AddLogItem("Flash addresses start:" + flashStart.ToString("X") + " and end: " + flashEnd.ToString("X"));
-                                    Thread.Sleep(1000);
-                                    dtstart = DateTime.Now;
-                                    AddLogItem("Update FLASH content");
-                                    DoEvents();
-                                    FlashReadArguments args = new FlashReadArguments() { FileName = fileName, start = flashStart, end = flashEnd };
-                                    BackgroundWorker bgWorker;
-                                    bgWorker = new BackgroundWorker();
-                                    bgWorker.DoWork += new DoWorkEventHandler(trionic8.WriteFlashME96);
-                                    bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
-                                    bgWorker.RunWorkerAsync(args);
-                                }
-                                else
-                                {
-                                    AddLogItem("Flash operation aborted");
-                                    trionic8.Cleanup();
-                                    EnableUserInput(true);
-                                    AddLogItem("Connection terminated");
-                                }
+                                AddLogItem("Unable to connect to ME9.6 ECU");
+                                trionic8.Cleanup();
                             }
+                        });
+                        if (args != null)
+                        {
+                            BackgroundWorker bgWorker;
+                            bgWorker = new BackgroundWorker();
+                            bgWorker.DoWork += new DoWorkEventHandler(trionic8.WriteFlashME96);
+                            bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
+                            bgWorker.RunWorkerAsync(args);
                         }
                         else
                         {
-                            AddLogItem("Unable to connect to ME9.6 ECU");
-                            trionic8.Cleanup();
                             EnableUserInput(true);
                             AddLogItem("Connection terminated");
                         }
@@ -1128,7 +1237,8 @@ namespace TrionicCANFlasher
             LogManager.Flush();
         }
 
-        private async Task<bool> FlashEngineCalibration(string fileName, string ecuEngineCalib)
+        // on the ME9.6 flash worker, the question blocks it until answered
+        private bool FlashEngineCalibration(string fileName, string ecuEngineCalib)
         {
             bool flash = true;
 
@@ -1147,8 +1257,8 @@ namespace TrionicCANFlasher
                     // Read the ecu here and compare with file.
                     // So we know if there is any point in writing?
 
-                    bool ask = await Dialogs.YesNo(this, "Do you want to overwrite calibration?",
-                        "Calibration write");
+                    bool ask = Dialogs.Wait(() => Dialogs.YesNo(this, "Do you want to overwrite calibration?",
+                        "Calibration write"));
                     if (!ask)
                     {
                         flash = false;
@@ -1174,12 +1284,24 @@ namespace TrionicCANFlasher
                             AddLogItem("Opening connection");
                             EnableUserInput(false);
 
-                            if (trionic5.openDevice())
+                            bool opened = false;
+                            await RunOnWorker(trionic5, () =>
                             {
-                                Thread.Sleep(1000);
-                                dtstart = DateTime.Now;
-                                AddLogItem("Acquiring FLASH content");
-                                DoEvents();
+                                opened = trionic5.openDevice();
+                                if (opened)
+                                {
+                                    Thread.Sleep(1000);
+                                    dtstart = DateTime.Now;
+                                    AddLogItem("Acquiring FLASH content");
+                                }
+                                else
+                                {
+                                    AddLogItem("Unable to connect to Trionic 5 ECU");
+                                    trionic5.Cleanup();
+                                }
+                            });
+                            if (opened)
+                            {
                                 BackgroundWorker bgWorker;
                                 bgWorker = new BackgroundWorker();
 
@@ -1190,8 +1312,6 @@ namespace TrionicCANFlasher
                             }
                             else
                             {
-                                AddLogItem("Unable to connect to Trionic 5 ECU");
-                                trionic5.Cleanup();
                                 AddLogItem("Connection closed");
                                 EnableUserInput(true);
                             }
@@ -1204,19 +1324,29 @@ namespace TrionicCANFlasher
                             AddLogItem("Opening connection");
                             EnableUserInput(false);
 
-                            if (trionic7.openDevice())
+                            // the read continues on Trionic7's threads, updateStatusInBox ends it
+                            m_t7FlashRunning = true;
+                            bool opened = false;
+                            bool ok = await RunOnWorker(trionic7, () =>
                             {
-                                // check reading status periodically
-                                Thread.Sleep(1000);
-                                AddLogItem("Acquiring FLASH content");
-                                DoEvents();
-                                dtstart = DateTime.Now;
-                                trionic7.ReadFlash(fileName);
-                            }
-                            else
+                                opened = trionic7.openDevice();
+                                if (opened)
+                                {
+                                    // check reading status periodically
+                                    Thread.Sleep(1000);
+                                    AddLogItem("Acquiring FLASH content");
+                                    dtstart = DateTime.Now;
+                                    trionic7.ReadFlash(fileName);
+                                }
+                                else
+                                {
+                                    AddLogItem("Unable to connect to Trionic 7 ECU");
+                                    trionic7.Cleanup();
+                                }
+                            });
+                            if (!opened || !ok)
                             {
-                                AddLogItem("Unable to connect to Trionic 7 ECU");
-                                trionic7.Cleanup();
+                                m_t7FlashRunning = false;
                                 AddLogItem("Connection closed");
                                 EnableUserInput(true);
                             }
@@ -1229,12 +1359,8 @@ namespace TrionicCANFlasher
                             AddLogItem("Opening connection");
                             trionic8.SecurityLevel = AccessLevel.AccessLevel01;
 
-                            if (trionic8.openDevice(false))
+                            if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Acquiring FLASH content", "Unable to connect to Trionic 8 ECU"))
                             {
-                                Thread.Sleep(1000);
-                                dtstart = DateTime.Now;
-                                AddLogItem("Acquiring FLASH content");
-                                DoEvents();
                                 BackgroundWorker bgWorker;
                                 bgWorker = new BackgroundWorker();
                                 if (AppSettings.UseLegion)
@@ -1248,13 +1374,6 @@ namespace TrionicCANFlasher
                                 bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                                 bgWorker.RunWorkerAsync(fileName);
                             }
-                            else
-                            {
-                                AddLogItem("Unable to connect to Trionic 8 ECU");
-                                trionic8.Cleanup();
-                                EnableUserInput(true);
-                                AddLogItem("Connection terminated");
-                            }
                         }
                         else if (cbxEcuType.SelectedIndex == (int)ECU.MOTRONIC96)
                         {
@@ -1263,27 +1382,23 @@ namespace TrionicCANFlasher
                             EnableUserInput(false);
                             AddLogItem("Opening connection");
                             trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                            if (trionic8.openDevice(false))
+                            bool opened = await OpenOnWorker(trionic8, () =>
                             {
+                                if (!trionic8.openDevice(false))
+                                {
+                                    return false;
+                                }
                                 trionic8.SaveAllDID(fileName);
-
-                                Thread.Sleep(1000);
-                                dtstart = DateTime.Now;
-                                AddLogItem("Acquiring FLASH content");
-                                DoEvents();
+                                return true;
+                            }, "Acquiring FLASH content", "Unable to connect to ME9.6 ECU");
+                            if (opened)
+                            {
                                 FlashReadArguments args = new FlashReadArguments() { FileName = fileName, start = (int)FileME96.MainOSAddress, end = (int)FileME96.LengthComplete };
                                 BackgroundWorker bgWorker;
                                 bgWorker = new BackgroundWorker();
                                 bgWorker.DoWork += new DoWorkEventHandler(trionic8.ReadFlashME96);
                                 bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                                 bgWorker.RunWorkerAsync(args);
-                            }
-                            else
-                            {
-                                AddLogItem("Unable to connect to ME9.6 ECU");
-                                trionic8.Cleanup();
-                                EnableUserInput(true);
-                                AddLogItem("Connection terminated");
                             }
                         }
 
@@ -1294,24 +1409,13 @@ namespace TrionicCANFlasher
                             EnableUserInput(false);
                             AddLogItem("Opening connection");
                             trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                            if (trionic8.openDevice(false))
+                            if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Acquiring FLASH content", "Unable to connect to Trionic 8 ECU"))
                             {
-                                Thread.Sleep(1000);
-                                dtstart = DateTime.Now;
-                                AddLogItem("Acquiring FLASH content");
-                                DoEvents();
                                 BackgroundWorker bgWorker;
                                 bgWorker = new BackgroundWorker();
                                 bgWorker.DoWork += new DoWorkEventHandler(trionic8.ReadFlashLegMCP);
                                 bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                                 bgWorker.RunWorkerAsync(fileName);
-                            }
-                            else
-                            {
-                                AddLogItem("Unable to connect to Trionic 8 ECU");
-                                trionic8.Cleanup();
-                                EnableUserInput(true);
-                                AddLogItem("Connection terminated");
                             }
                         }
                         else if (cbxEcuType.SelectedIndex == (int)ECU.Z22SEMain_LEG)
@@ -1321,24 +1425,13 @@ namespace TrionicCANFlasher
                             EnableUserInput(false);
                             AddLogItem("Opening connection");
                             trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                            if (trionic8.openDevice(false))
+                            if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Acquiring FLASH content", "Unable to connect to Z22SE ECU"))
                             {
-                                Thread.Sleep(1000);
-                                dtstart = DateTime.Now;
-                                AddLogItem("Acquiring FLASH content");
-                                DoEvents();
                                 BackgroundWorker bgWorker;
                                 bgWorker = new BackgroundWorker();
                                 bgWorker.DoWork += new DoWorkEventHandler(trionic8.ReadFlashLegZ22SE_Main);
                                 bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                                 bgWorker.RunWorkerAsync(fileName);
-                            }
-                            else
-                            {
-                                AddLogItem("Unable to connect to Z22SE ECU");
-                                trionic8.Cleanup();
-                                EnableUserInput(true);
-                                AddLogItem("Connection terminated");
                             }
                         }
                         else if (cbxEcuType.SelectedIndex == (int)ECU.Z22SEMCP_LEG)
@@ -1348,24 +1441,13 @@ namespace TrionicCANFlasher
                             EnableUserInput(false);
                             AddLogItem("Opening connection");
                             trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                            if (trionic8.openDevice(false))
+                            if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Acquiring FLASH content", "Unable to connect to Z22SE ECU"))
                             {
-                                Thread.Sleep(1000);
-                                dtstart = DateTime.Now;
-                                AddLogItem("Acquiring FLASH content");
-                                DoEvents();
                                 BackgroundWorker bgWorker;
                                 bgWorker = new BackgroundWorker();
                                 bgWorker.DoWork += new DoWorkEventHandler(trionic8.ReadFlashLegZ22SE_MCP);
                                 bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                                 bgWorker.RunWorkerAsync(fileName);
-                            }
-                            else
-                            {
-                                AddLogItem("Unable to connect to Z22SE ECU");
-                                trionic8.Cleanup();
-                                EnableUserInput(true);
-                                AddLogItem("Connection terminated");
                             }
                         }
                     }
@@ -1374,7 +1456,7 @@ namespace TrionicCANFlasher
             LogManager.Flush();
         }
 
-        private void btnGetEcuInfo_Click(object sender, RoutedEventArgs e)
+        private async void btnGetEcuInfo_Click(object sender, RoutedEventArgs e)
         {
             SetViewMode(false);
             if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC5)
@@ -1384,18 +1466,20 @@ namespace TrionicCANFlasher
                 AddLogItem("Opening connection");
                 EnableUserInput(false);
 
-                if (trionic5.openDevice())
+                await RunOnWorker(trionic5, () =>
                 {
-                    Thread.Sleep(1000);
-                    AddLogItem("Aquiring ECU info");
-                    DoEvents();
-                    trionic5.GetECUInfo(true);
-                }
-                else
-                {
-                    AddLogItem("Unable to connect to Trionic 5 ECU");
-                }
-                trionic5.Cleanup();
+                    if (trionic5.openDevice())
+                    {
+                        Thread.Sleep(1000);
+                        AddLogItem("Aquiring ECU info");
+                        trionic5.GetECUInfo(true);
+                    }
+                    else
+                    {
+                        AddLogItem("Unable to connect to Trionic 5 ECU");
+                    }
+                    trionic5.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
@@ -1407,18 +1491,20 @@ namespace TrionicCANFlasher
                 AddLogItem("Opening connection");
                 EnableUserInput(false);
 
-                if (trionic7.openDevice())
+                await RunOnWorker(trionic7, () =>
                 {
-                    Thread.Sleep(1000);
-                    AddLogItem("Aquiring ECU info");
-                    DoEvents();
-                    trionic7.GetECUInfo();
-                }
-                else
-                {
-                    AddLogItem("Unable to connect to Trionic 7 ECU");
-                }
-                trionic7.Cleanup();
+                    if (trionic7.openDevice())
+                    {
+                        Thread.Sleep(1000);
+                        AddLogItem("Aquiring ECU info");
+                        trionic7.GetECUInfo();
+                    }
+                    else
+                    {
+                        AddLogItem("Unable to connect to Trionic 7 ECU");
+                    }
+                    trionic7.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
@@ -1429,68 +1515,71 @@ namespace TrionicCANFlasher
                 EnableUserInput(false);
                 AddLogItem("Opening connection");
                 trionic8.SecurityLevel = AccessLevel.AccessLevelFD;
-                if (trionic8.openDevice(false))
+                await RunOnWorker(trionic8, () =>
                 {
-                    // ELM devices cannot detect send failures until in the readMessage thread
-                    // Added a connection check here to avoid confused users when all fields show blank!
-                    string ecuhardware = trionic8.GetECUHardware();
-                    if (ecuhardware == "")
+                    if (trionic8.openDevice(false))
                     {
-                        AddLogItem("ECU connection issue, check logs");
+                        // ELM devices cannot detect send failures until in the readMessage thread
+                        // Added a connection check here to avoid confused users when all fields show blank!
+                        string ecuhardware = trionic8.GetECUHardware();
+                        if (ecuhardware == "")
+                        {
+                            AddLogItem("ECU connection issue, check logs");
+                        }
+                        else
+                        {
+                            AddLogItem("VINNumber                 : " + trionic8.GetVehicleVIN());            //0x90
+                            AddLogItem("Calibration set           : " + trionic8.GetCalibrationSet());        //0x74
+                            AddLogItem("Codefile version          : " + trionic8.GetCodefileVersion());       //0x73
+                            AddLogItem("ECU description           : " + trionic8.GetECUDescription());        //0x72
+                            AddLogItem("ECU hardware              : " + ecuhardware);                         //0x71
+                            AddLogItem("ECU sw number             : " + trionic8.GetECUSWVersionNumber());    //0x95
+                            AddLogItem("Programming date          : " + trionic8.GetProgrammingDate());       //0x99
+                            AddLogItem("Build date                : " + trionic8.GetBuildDate());             //0x0A
+                            AddLogItem("Serial number             : " + trionic8.GetSerialNumber());          //0xB4
+                            AddLogItem("Software version          : " + trionic8.GetSoftwareVersion());       //0x08
+                            AddLogItem("0F identifier             : " + trionic8.RequestECUInfoAsString(0x0F));
+                            AddLogItem("SW identifier 1           : " + trionic8.RequestECUInfoAsString(0xC1));
+                            AddLogItem("SW identifier 2           : " + trionic8.RequestECUInfoAsString(0xC2));
+                            AddLogItem("SW identifier 3           : " + trionic8.RequestECUInfoAsString(0xC3));
+                            AddLogItem("SW identifier 4           : " + trionic8.RequestECUInfoAsString(0xC4));
+                            AddLogItem("SW identifier 5           : " + trionic8.RequestECUInfoAsString(0xC5));
+                            AddLogItem("SW identifier 6           : " + trionic8.RequestECUInfoAsString(0xC6));
+                            AddLogItem("Hardware type             : " + trionic8.RequestECUInfoAsString(0x97));
+                            AddLogItem("75 identifier             : " + trionic8.RequestECUInfoAsString(0x75));
+                            AddLogItem("Engine type               : " + trionic8.RequestECUInfoAsString(0x0C));
+                            AddLogItem("Supplier ID               : " + trionic8.RequestECUInfoAsString(0x92));
+                            AddLogItem("Speed limiter             : " + trionic8.GetTopSpeed() + " km/h");
+                            AddLogItem("Oil quality               : " + trionic8.GetOilQuality().ToString("F2") + " %");
+                            AddLogItem("SAAB partnumber           : " + trionic8.GetSaabPartnumber());
+                            AddLogItem("Diagnostic Data Identifier: " + trionic8.GetDiagnosticDataIdentifier());
+                            AddLogItem("End model partnumber      : " + trionic8.GetInt64FromIdAsString(0xCB));
+                            AddLogItem("Base model partnumber     : " + trionic8.GetInt64FromIdAsString(0xCC));
+                            AddLogItem("ManufacturersEnableCounter: " + trionic8.GetManufacturersEnableCounter());
+                            AddLogItem("Tester Serial             : " + trionic8.RequestECUInfoAsString(0x98));
+                            bool convertible, sai, highoutput, biopower, clutchStart;
+                            TankType tankType;
+                            DiagnosticType diagnosticType;
+                            string rawPI01;
+                            trionic8.GetPI01(out convertible, out sai, out highoutput, out biopower, out diagnosticType, out clutchStart, out tankType, out rawPI01);
+
+                            logger.Debug("PI 0x01         : Cab:" + convertible + " SAI:" + sai + " HighOutput:" + highoutput + " Biopower:" + biopower + " DiagnosticType:" + diagnosticType + " ClutchStart:" + clutchStart + " TankType:" + tankType + " rawValues: " + rawPI01);
+                            logger.Debug("PI 0x03         : " + trionic8.GetPI03());
+                            logger.Debug("PI 0x04         : " + trionic8.GetPI04());
+                            logger.Debug("PI 0x07         : " + trionic8.GetPI07());
+                            logger.Debug("PI 0x2E         : " + trionic8.GetPI2E());
+                            logger.Debug("PI 0xB9         : " + trionic8.GetPIB9());
+                            logger.Debug("PI 0x24         : " + trionic8.GetPI24());
+                            logger.Debug("PI 0xA0         : " + trionic8.GetPIA0());
+                            logger.Debug("PI 0x96         : " + trionic8.GetPI96());
+
+                            // On a non biopower bin this request seem to poison the session, do it last always!
+                            AddLogItem("E85                       : " + trionic8.GetE85Percentage().ToString("F2") + " %");
+                        }
                     }
-                    else
-                    {
-                        AddLogItem("VINNumber                 : " + trionic8.GetVehicleVIN());            //0x90
-                        AddLogItem("Calibration set           : " + trionic8.GetCalibrationSet());        //0x74
-                        AddLogItem("Codefile version          : " + trionic8.GetCodefileVersion());       //0x73
-                        AddLogItem("ECU description           : " + trionic8.GetECUDescription());        //0x72
-                        AddLogItem("ECU hardware              : " + ecuhardware);                         //0x71
-                        AddLogItem("ECU sw number             : " + trionic8.GetECUSWVersionNumber());    //0x95
-                        AddLogItem("Programming date          : " + trionic8.GetProgrammingDate());       //0x99
-                        AddLogItem("Build date                : " + trionic8.GetBuildDate());             //0x0A
-                        AddLogItem("Serial number             : " + trionic8.GetSerialNumber());          //0xB4
-                        AddLogItem("Software version          : " + trionic8.GetSoftwareVersion());       //0x08
-                        AddLogItem("0F identifier             : " + trionic8.RequestECUInfoAsString(0x0F));
-                        AddLogItem("SW identifier 1           : " + trionic8.RequestECUInfoAsString(0xC1));
-                        AddLogItem("SW identifier 2           : " + trionic8.RequestECUInfoAsString(0xC2));
-                        AddLogItem("SW identifier 3           : " + trionic8.RequestECUInfoAsString(0xC3));
-                        AddLogItem("SW identifier 4           : " + trionic8.RequestECUInfoAsString(0xC4));
-                        AddLogItem("SW identifier 5           : " + trionic8.RequestECUInfoAsString(0xC5));
-                        AddLogItem("SW identifier 6           : " + trionic8.RequestECUInfoAsString(0xC6));
-                        AddLogItem("Hardware type             : " + trionic8.RequestECUInfoAsString(0x97));
-                        AddLogItem("75 identifier             : " + trionic8.RequestECUInfoAsString(0x75));
-                        AddLogItem("Engine type               : " + trionic8.RequestECUInfoAsString(0x0C));
-                        AddLogItem("Supplier ID               : " + trionic8.RequestECUInfoAsString(0x92));
-                        AddLogItem("Speed limiter             : " + trionic8.GetTopSpeed() + " km/h");
-                        AddLogItem("Oil quality               : " + trionic8.GetOilQuality().ToString("F2") + " %");
-                        AddLogItem("SAAB partnumber           : " + trionic8.GetSaabPartnumber());
-                        AddLogItem("Diagnostic Data Identifier: " + trionic8.GetDiagnosticDataIdentifier());
-                        AddLogItem("End model partnumber      : " + trionic8.GetInt64FromIdAsString(0xCB));
-                        AddLogItem("Base model partnumber     : " + trionic8.GetInt64FromIdAsString(0xCC));
-                        AddLogItem("ManufacturersEnableCounter: " + trionic8.GetManufacturersEnableCounter());
-                        AddLogItem("Tester Serial             : " + trionic8.RequestECUInfoAsString(0x98));
-                        bool convertible, sai, highoutput, biopower, clutchStart;
-                        TankType tankType;
-                        DiagnosticType diagnosticType;
-                        string rawPI01;
-                        trionic8.GetPI01(out convertible, out sai, out highoutput, out biopower, out diagnosticType, out clutchStart, out tankType, out rawPI01);
 
-                        logger.Debug("PI 0x01         : Cab:" + convertible + " SAI:" + sai + " HighOutput:" + highoutput + " Biopower:" + biopower + " DiagnosticType:" + diagnosticType + " ClutchStart:" + clutchStart + " TankType:" + tankType + " rawValues: " + rawPI01);
-                        logger.Debug("PI 0x03         : " + trionic8.GetPI03());
-                        logger.Debug("PI 0x04         : " + trionic8.GetPI04());
-                        logger.Debug("PI 0x07         : " + trionic8.GetPI07());
-                        logger.Debug("PI 0x2E         : " + trionic8.GetPI2E());
-                        logger.Debug("PI 0xB9         : " + trionic8.GetPIB9());
-                        logger.Debug("PI 0x24         : " + trionic8.GetPI24());
-                        logger.Debug("PI 0xA0         : " + trionic8.GetPIA0());
-                        logger.Debug("PI 0x96         : " + trionic8.GetPI96());
-
-                        // On a non biopower bin this request seem to poison the session, do it last always!
-                        AddLogItem("E85                       : " + trionic8.GetE85Percentage().ToString("F2") + " %");
-                    }
-                }
-
-                trionic8.Cleanup();
+                    trionic8.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
@@ -1500,57 +1589,60 @@ namespace TrionicCANFlasher
 
                 EnableUserInput(false);
                 AddLogItem("Opening connection");
-                if (trionic8.openDevice(false)) // change to test securityaccess
+                await RunOnWorker(trionic8, () =>
                 {
-                    // ELM devices cannot detect send failures until in the readMessage thread
-                    // Added a connection check here to avoid confused users when all fields show blank!
-                    string calibrationset = trionic8.GetCalibrationSet();
-                    if (calibrationset == "")
+                    if (trionic8.openDevice(false)) // change to test securityaccess
                     {
-                        AddLogItem("ECU connection issue, check logs");
+                        // ELM devices cannot detect send failures until in the readMessage thread
+                        // Added a connection check here to avoid confused users when all fields show blank!
+                        string calibrationset = trionic8.GetCalibrationSet();
+                        if (calibrationset == "")
+                        {
+                            AddLogItem("ECU connection issue, check logs");
+                        }
+                        else
+                        {
+                            string ecuMainOS = trionic8.RequestECUInfoAsString(0xC1);
+                            ecuMainOS = SubString8(ecuMainOS);
+                            string ecuEngineCalib = trionic8.RequestECUInfoAsString(0xC2);
+                            ecuEngineCalib = SubString8(ecuEngineCalib);
+                            string ecuSystemCalib = trionic8.RequestECUInfoAsString(0xC3);
+                            ecuSystemCalib = SubString8(ecuSystemCalib);
+                            string ecuSpeedoCalib = trionic8.RequestECUInfoAsString(0xC4);
+                            ecuSpeedoCalib = SubString8(ecuSpeedoCalib);
+                            string ecuSlaveOS = trionic8.RequestECUInfoAsString(0xC5);
+                            ecuSlaveOS = SubString8(ecuSlaveOS);
+
+                            AddLogItem("VINNumber                 : " + trionic8.GetVehicleVIN());           //0x90
+                            AddLogItem("Calibration set           : " + trionic8.GetCalibrationSet());       //0x74
+                            AddLogItem("Codefile version          : " + trionic8.GetCodefileVersion());      //0x73
+                            AddLogItem("Diagnostic address        : " + trionic8.GetDiagnosticAddress());    //0xB0
+                            AddLogItem("Serial number             : " + trionic8.GetSerialNumber());         //0xB4
+                            AddLogItem("Programming date          : " + trionic8.GetProgrammingDateME96());  //0x99
+                            AddLogItem("Main OS                   : " + ecuMainOS);
+                            AddLogItem("Engine Calib              : " + ecuEngineCalib);
+                            AddLogItem("System Calib              : " + ecuSystemCalib);
+                            AddLogItem("Speedo Calib              : " + ecuSpeedoCalib);
+                            AddLogItem("Slave OS                  : " + ecuSlaveOS);
+                            AddLogItem("Hardware type             : " + trionic8.RequestECUInfoAsString(0x97));
+                            AddLogItem("Supplier ID               : " + trionic8.RequestECUInfoAsString(0x92));
+                            AddLogItem("Speed limiter             : " + trionic8.GetTopSpeed() + " km/h"); //0x02
+                            AddLogItem("Radum                     : " + trionic8.GetRadum());              //0x24
+                            AddLogItem("Pmc w                     : " + trionic8.GetPmcW());               //0x2E
+                            AddLogItem("Diagnostic Data Identifier: " + trionic8.GetDiagnosticDataIdentifier());
+                            AddLogItem("End model partnumber      : " + trionic8.GetInt64FromIdAsString(0xCB));
+                            AddLogItem("Base model partnumber     : " + trionic8.GetInt64FromIdAsString(0xCC));
+                            AddLogItem("ManufacturersEnableCounter: " + trionic8.GetManufacturersEnableCounter());
+                            AddLogItem("Tester Serial             : " + trionic8.RequestECUInfoAsString(0x98));
+                            AddLogItem("Bosch Enable Counter      : " + trionic8.GetBoschEnableCounter());
+
+                            //string name = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ecuinfo");
+                            //trionic8.SaveAllDID(name);
+                        }
                     }
-                    else
-                    {
-                        string ecuMainOS = trionic8.RequestECUInfoAsString(0xC1);
-                        ecuMainOS = SubString8(ecuMainOS);
-                        string ecuEngineCalib = trionic8.RequestECUInfoAsString(0xC2);
-                        ecuEngineCalib = SubString8(ecuEngineCalib);
-                        string ecuSystemCalib = trionic8.RequestECUInfoAsString(0xC3);
-                        ecuSystemCalib = SubString8(ecuSystemCalib);
-                        string ecuSpeedoCalib = trionic8.RequestECUInfoAsString(0xC4);
-                        ecuSpeedoCalib = SubString8(ecuSpeedoCalib);
-                        string ecuSlaveOS = trionic8.RequestECUInfoAsString(0xC5);
-                        ecuSlaveOS = SubString8(ecuSlaveOS);
 
-                        AddLogItem("VINNumber                 : " + trionic8.GetVehicleVIN());           //0x90
-                        AddLogItem("Calibration set           : " + trionic8.GetCalibrationSet());       //0x74
-                        AddLogItem("Codefile version          : " + trionic8.GetCodefileVersion());      //0x73
-                        AddLogItem("Diagnostic address        : " + trionic8.GetDiagnosticAddress());    //0xB0
-                        AddLogItem("Serial number             : " + trionic8.GetSerialNumber());         //0xB4
-                        AddLogItem("Programming date          : " + trionic8.GetProgrammingDateME96());  //0x99
-                        AddLogItem("Main OS                   : " + ecuMainOS);
-                        AddLogItem("Engine Calib              : " + ecuEngineCalib);
-                        AddLogItem("System Calib              : " + ecuSystemCalib);
-                        AddLogItem("Speedo Calib              : " + ecuSpeedoCalib);
-                        AddLogItem("Slave OS                  : " + ecuSlaveOS);
-                        AddLogItem("Hardware type             : " + trionic8.RequestECUInfoAsString(0x97));
-                        AddLogItem("Supplier ID               : " + trionic8.RequestECUInfoAsString(0x92));
-                        AddLogItem("Speed limiter             : " + trionic8.GetTopSpeed() + " km/h"); //0x02
-                        AddLogItem("Radum                     : " + trionic8.GetRadum());              //0x24
-                        AddLogItem("Pmc w                     : " + trionic8.GetPmcW());               //0x2E
-                        AddLogItem("Diagnostic Data Identifier: " + trionic8.GetDiagnosticDataIdentifier());
-                        AddLogItem("End model partnumber      : " + trionic8.GetInt64FromIdAsString(0xCB));
-                        AddLogItem("Base model partnumber     : " + trionic8.GetInt64FromIdAsString(0xCC));
-                        AddLogItem("ManufacturersEnableCounter: " + trionic8.GetManufacturersEnableCounter());
-                        AddLogItem("Tester Serial             : " + trionic8.RequestECUInfoAsString(0x98));
-                        AddLogItem("Bosch Enable Counter      : " + trionic8.GetBoschEnableCounter());
-
-                        //string name = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ecuinfo");
-                        //trionic8.SaveAllDID(name);
-                    }
-                }
-
-                trionic8.Cleanup();
+                    trionic8.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
@@ -1587,7 +1679,7 @@ namespace TrionicCANFlasher
             if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC5)
             {
                 SetGenericOptions(trionic5);
-                await Task.Run(() =>
+                await RunOnWorker(trionic5, () =>
                 {
                     if (trionic5.openDevice())
                     {
@@ -1606,7 +1698,7 @@ namespace TrionicCANFlasher
                 // before SetGenericOptions, which only builds the KWP stack without the Combi's own flasher
                 trionic7.UseFlasherOnDevice = false;
                 SetGenericOptions(trionic7);
-                await Task.Run(() =>
+                await RunOnWorker(trionic7, () =>
                 {
                     if (trionic7.openDevice())
                     {
@@ -1622,7 +1714,7 @@ namespace TrionicCANFlasher
             else if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC8)
             {
                 SetGenericOptions(trionic8);
-                await Task.Run(() =>
+                await RunOnWorker(trionic8, () =>
                 {
                     if (trionic8.openDevice(false))
                     {
@@ -1648,19 +1740,21 @@ namespace TrionicCANFlasher
                     AddLogItem("Opening connection");
                     EnableUserInput(false);
 
-                    if (trionic5.openDevice())
+                    await RunOnWorker(trionic5, () =>
                     {
-                        Thread.Sleep(1000);
-                        AddLogItem("Aquiring snapshot");
-                        DoEvents();
-                        dtstart = DateTime.Now;
-                        trionic5.GetSRAMSnapshot(fileName);
-                    }
-                    else
-                    {
-                        AddLogItem("Unable to connect to Trionic 5 ECU");
-                    }
-                    trionic5.Cleanup();
+                        if (trionic5.openDevice())
+                        {
+                            Thread.Sleep(1000);
+                            AddLogItem("Aquiring snapshot");
+                            dtstart = DateTime.Now;
+                            trionic5.GetSRAMSnapshot(fileName);
+                        }
+                        else
+                        {
+                            AddLogItem("Unable to connect to Trionic 5 ECU");
+                        }
+                        trionic5.Cleanup();
+                    });
                     EnableUserInput(true);
                     AddLogItem("Connection terminated");
                 }
@@ -1672,19 +1766,21 @@ namespace TrionicCANFlasher
                     AddLogItem("Opening connection");
                     EnableUserInput(false);
 
-                    if (trionic7.openDevice())
+                    await RunOnWorker(trionic7, () =>
                     {
-                        Thread.Sleep(1000);
-                        AddLogItem("Aquiring snapshot");
-                        DoEvents();
-                        dtstart = DateTime.Now;
-                        trionic7.GetSRAMSnapshot(fileName);
-                    }
-                    else
-                    {
-                        AddLogItem("Unable to connect to Trionic 7 ECU");
-                    }
-                    trionic7.Cleanup();
+                        if (trionic7.openDevice())
+                        {
+                            Thread.Sleep(1000);
+                            AddLogItem("Aquiring snapshot");
+                            dtstart = DateTime.Now;
+                            trionic7.GetSRAMSnapshot(fileName);
+                        }
+                        else
+                        {
+                            AddLogItem("Unable to connect to Trionic 7 ECU");
+                        }
+                        trionic7.Cleanup();
+                    });
                     EnableUserInput(true);
                     AddLogItem("Connection terminated");
                 }
@@ -1695,21 +1791,15 @@ namespace TrionicCANFlasher
                     EnableUserInput(false);
                     AddLogItem("Opening connection");
                     trionic8.SecurityLevel = AccessLevel.AccessLevelFD;
-                    if (trionic8.openDevice(true))
+                    // a failed open used to end here with the input disabled for good; the window can't be closed
+                    // during an operation, so it cleans up and gives the input back like the others
+                    if (await OpenOnWorker(trionic8, () => trionic8.openDevice(true), "Aquiring snapshot", "Unable to connect to Trionic 8 ECU"))
                     {
-                        Thread.Sleep(1000);
-                        dtstart = DateTime.Now;
-                        AddLogItem("Aquiring snapshot");
-                        DoEvents();
                         BackgroundWorker bgWorker;
                         bgWorker = new BackgroundWorker();
                         bgWorker.DoWork += new DoWorkEventHandler(trionic8.GetSRAMSnapshot);
                         bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                         bgWorker.RunWorkerAsync(fileName);
-                    }
-                    else
-                    {
-                        AddLogItem("Unable to connect to Trionic 8 ECU");
                     }
                 }
             }
@@ -1738,12 +1828,8 @@ namespace TrionicCANFlasher
                         EnableUserInput(false);
                         AddLogItem("Opening connection");
                         trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                        if (trionic8.openDevice(false))
+                        if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Recovering ECU", "Unable to connect to Trionic 8 ECU"))
                         {
-                            Thread.Sleep(1000);
-                            dtstart = DateTime.Now;
-                            AddLogItem("Recovering ECU");
-                            DoEvents();
                             BackgroundWorker bgWorker;
                             bgWorker = new BackgroundWorker();
                             if (AppSettings.UseLegion)
@@ -1757,20 +1843,13 @@ namespace TrionicCANFlasher
                             bgWorker.RunWorkerCompleted += new RunWorkerCompletedEventHandler(bgWorker_RunWorkerCompleted);
                             bgWorker.RunWorkerAsync(fileName);
                         }
-                        else
-                        {
-                            AddLogItem("Unable to connect to Trionic 8 ECU");
-                            trionic8.Cleanup();
-                            EnableUserInput(true);
-                            AddLogItem("Connection terminated");
-                        }
                     }
                 }
             }
             LogManager.Flush();
         }
 
-        private void btnReadDTC_Click(object sender, RoutedEventArgs e)
+        private async void btnReadDTC_Click(object sender, RoutedEventArgs e)
         {
             SetViewMode(false);
             if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC7)
@@ -1780,16 +1859,19 @@ namespace TrionicCANFlasher
 
                 EnableUserInput(false);
                 AddLogItem("Opening connection");
-                if (trionic7.openDevice())
+                await RunOnWorker(trionic7, () =>
                 {
-                    string[] codes = trionic7.ReadDTC();
-                    foreach (string a in codes)
+                    if (trionic7.openDevice())
                     {
-                        AddLogItem(a);
+                        string[] codes = trionic7.ReadDTC();
+                        foreach (string a in codes)
+                        {
+                            AddLogItem(a);
+                        }
                     }
-                }
 
-                trionic7.Cleanup();
+                    trionic7.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
@@ -1800,16 +1882,19 @@ namespace TrionicCANFlasher
                 EnableUserInput(false);
                 AddLogItem("Opening connection");
                 trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                if (trionic8.openDevice(false))
+                await RunOnWorker(trionic8, () =>
                 {
-                    string[] codes = trionic8.ReadDTC();
-                    foreach (string a in codes)
+                    if (trionic8.openDevice(false))
                     {
-                        AddLogItem(a);
+                        string[] codes = trionic8.ReadDTC();
+                        foreach (string a in codes)
+                        {
+                            AddLogItem(a);
+                        }
                     }
-                }
 
-                trionic8.Cleanup();
+                    trionic8.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
@@ -1820,16 +1905,19 @@ namespace TrionicCANFlasher
                 EnableUserInput(false);
                 AddLogItem("Opening connection");
                 trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                if (trionic8.openDevice(false))
+                await RunOnWorker(trionic8, () =>
                 {
-                    string[] codes = trionic8.ReadDTC();
-                    foreach (string a in codes)
+                    if (trionic8.openDevice(false))
                     {
-                        AddLogItem(a);
+                        string[] codes = trionic8.ReadDTC();
+                        foreach (string a in codes)
+                        {
+                            AddLogItem(a);
+                        }
                     }
-                }
 
-                trionic8.Cleanup();
+                    trionic8.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
@@ -1845,30 +1933,34 @@ namespace TrionicCANFlasher
 
                 EnableUserInput(false);
                 AddLogItem("Opening connection");
-                if (trionic7.openDevice())
+                await RunOnWorker(trionic7, () =>
                 {
-                    EditParameters pi = new EditParameters();
-                    pi.setECU(ECU.TRIONIC7);
-                    float e85 = trionic7.GetE85Percentage();
-                    pi.E85 = e85;
-
-                    if (await pi.ShowDialog<bool>(this))
+                    if (trionic7.openDevice())
                     {
-                        if (!pi.E85.Equals(e85))
+                        float e85 = trionic7.GetE85Percentage();
+                        EditedParameters pi = ShowEditParameters(ECU.TRIONIC7, dlg =>
                         {
-                            if(trionic7.SetE85Percentage((int)pi.E85))
+                            dlg.E85 = e85;
+                        });
+
+                        if (pi != null)
+                        {
+                            if (!pi.E85.Equals(e85))
                             {
-                                AddLogItem("Set fields successful, E85Percentage:" + pi.E85);
-                            }
-                            else
-                            {
-                                AddLogItem("Set fields failed, E85Percentage:" + pi.E85);
+                                if(trionic7.SetE85Percentage((int)pi.E85))
+                                {
+                                    AddLogItem("Set fields successful, E85Percentage:" + pi.E85);
+                                }
+                                else
+                                {
+                                    AddLogItem("Set fields failed, E85Percentage:" + pi.E85);
+                                }
                             }
                         }
                     }
-                }
 
-                trionic7.Cleanup();
+                    trionic7.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
@@ -1879,117 +1971,121 @@ namespace TrionicCANFlasher
                 EnableUserInput(false);
                 AddLogItem("Opening connection");
                 trionic8.SecurityLevel = AccessLevel.AccessLevelFD;
-                if (trionic8.openDevice(true))
+                await RunOnWorker(trionic8, () =>
                 {
-                    EditParameters pi = new EditParameters();
-                    pi.setECU(ECU.TRIONIC8);
-
-                    float oil = trionic8.GetOilQuality();
-                    pi.Oil = oil;
-
-                    string vin = trionic8.GetVehicleVIN();
-                    pi.VIN = vin;
-
-                    bool convertible, sai, highoutput, biopower, clutchStart;
-                    TankType tankType;
-                    DiagnosticType diagnosticType;
-                    string rawPI01;
-                    trionic8.GetPI01(out convertible, out sai, out highoutput, out biopower, out diagnosticType, out clutchStart, out tankType, out rawPI01);
-                    pi.Convertible = convertible;
-                    pi.SAI = sai;
-                    pi.Highoutput = highoutput;
-                    pi.Biopower = biopower;
-                    pi.DiagnosticType = diagnosticType;
-                    pi.TankType = tankType;
-                    pi.ClutchStart = clutchStart;
-                    AddLogItem("Read fields");
-                    AddLogItem("Convertible:" + pi.Convertible + " SAI:" + pi.SAI + " HighOutput:" + pi.Highoutput + " Biopower:" + pi.Biopower + " DiagnosticType:" + pi.DiagnosticType + " ClutchStart:" + pi.ClutchStart + " TankType:" + pi.TankType);
-
-                    int topspeed = trionic8.GetTopSpeed();
-                    pi.TopSpeed = topspeed;
-
-                    // On a non biopower this call seem to poison the session, do it last!
-                    float e85 = trionic8.GetE85Percentage();
-                    pi.E85 = e85;
-
-                    if (await pi.ShowDialog<bool>(this))
+                    if (trionic8.openDevice(true))
                     {
-                        if (!pi.Convertible.Equals(convertible) || !pi.SAI.Equals(sai) || !pi.Highoutput.Equals(highoutput) || !pi.Biopower.Equals(biopower) || !pi.ClutchStart.Equals(clutchStart) || !pi.DiagnosticType.Equals(diagnosticType) || !pi.TankType.Equals(tankType))
-                        {
-                            AddLogItem("Detected changed values from user:" + pi.Convertible + " SAI:" + pi.SAI + " HighOutput:" + pi.Highoutput + " Biopower:" + pi.Biopower + " DiagnosticType:" + pi.DiagnosticType + " ClutchStart:" + pi.ClutchStart + " TankType:" + pi.TankType);
+                        float oil = trionic8.GetOilQuality();
 
-                            // Do a second read to make sure the first one was ok
-                            bool convertible2, sai2, highoutput2, biopower2, clutchStart2;
-                            TankType tankType2;
-                            DiagnosticType diagnosticType2;
-                            trionic8.GetPI01(out convertible2, out sai2, out highoutput2, out biopower2, out diagnosticType2, out clutchStart2, out tankType2, out rawPI01);
-                            if (convertible2.Equals(convertible) && sai2.Equals(sai) && highoutput2.Equals(highoutput) && biopower2.Equals(biopower) && clutchStart2.Equals(clutchStart) && diagnosticType2.Equals(diagnosticType) && tankType2.Equals(tankType))
+                        string vin = trionic8.GetVehicleVIN();
+
+                        bool convertible, sai, highoutput, biopower, clutchStart;
+                        TankType tankType;
+                        DiagnosticType diagnosticType;
+                        string rawPI01;
+                        trionic8.GetPI01(out convertible, out sai, out highoutput, out biopower, out diagnosticType, out clutchStart, out tankType, out rawPI01);
+
+                        int topspeed = trionic8.GetTopSpeed();
+
+                        // On a non biopower this call seem to poison the session, do it last!
+                        float e85 = trionic8.GetE85Percentage();
+
+                        EditedParameters pi = ShowEditParameters(ECU.TRIONIC8, dlg =>
+                        {
+                            dlg.Oil = oil;
+                            dlg.VIN = vin;
+                            dlg.Convertible = convertible;
+                            dlg.SAI = sai;
+                            dlg.Highoutput = highoutput;
+                            dlg.Biopower = biopower;
+                            dlg.DiagnosticType = diagnosticType;
+                            dlg.TankType = tankType;
+                            dlg.ClutchStart = clutchStart;
+                            AddLogItem("Read fields");
+                            AddLogItem("Convertible:" + dlg.Convertible + " SAI:" + dlg.SAI + " HighOutput:" + dlg.Highoutput + " Biopower:" + dlg.Biopower + " DiagnosticType:" + dlg.DiagnosticType + " ClutchStart:" + dlg.ClutchStart + " TankType:" + dlg.TankType);
+                            dlg.TopSpeed = topspeed;
+                            dlg.E85 = e85;
+                        });
+
+                        if (pi != null)
+                        {
+                            if (!pi.Convertible.Equals(convertible) || !pi.SAI.Equals(sai) || !pi.Highoutput.Equals(highoutput) || !pi.Biopower.Equals(biopower) || !pi.ClutchStart.Equals(clutchStart) || !pi.DiagnosticType.Equals(diagnosticType) || !pi.TankType.Equals(tankType))
                             {
-                                if (trionic8.SetPI01(pi.Convertible, pi.SAI, pi.Highoutput, pi.Biopower, pi.DiagnosticType, pi.ClutchStart, pi.TankType))
+                                AddLogItem("Detected changed values from user:" + pi.Convertible + " SAI:" + pi.SAI + " HighOutput:" + pi.Highoutput + " Biopower:" + pi.Biopower + " DiagnosticType:" + pi.DiagnosticType + " ClutchStart:" + pi.ClutchStart + " TankType:" + pi.TankType);
+
+                                // Do a second read to make sure the first one was ok
+                                bool convertible2, sai2, highoutput2, biopower2, clutchStart2;
+                                TankType tankType2;
+                                DiagnosticType diagnosticType2;
+                                trionic8.GetPI01(out convertible2, out sai2, out highoutput2, out biopower2, out diagnosticType2, out clutchStart2, out tankType2, out rawPI01);
+                                if (convertible2.Equals(convertible) && sai2.Equals(sai) && highoutput2.Equals(highoutput) && biopower2.Equals(biopower) && clutchStart2.Equals(clutchStart) && diagnosticType2.Equals(diagnosticType) && tankType2.Equals(tankType))
                                 {
-                                    AddLogItem("Set fields successful");
+                                    if (trionic8.SetPI01(pi.Convertible, pi.SAI, pi.Highoutput, pi.Biopower, pi.DiagnosticType, pi.ClutchStart, pi.TankType))
+                                    {
+                                        AddLogItem("Set fields successful");
+                                    }
+                                    else
+                                    {
+                                        AddLogItem("Set fields failed");
+                                    }
                                 }
                                 else
                                 {
-                                    AddLogItem("Set fields failed");
+                                    AddLogItem("Set fields failed, verification read does not match");
                                 }
                             }
-                            else
-                            {
-                                AddLogItem("Set fields failed, verification read does not match");
-                            }
-                        }
 
-                        if (!pi.VIN.Equals(vin))
-                        {
-                            if(trionic8.SetVIN(pi.VIN))
+                            if (!pi.VIN.Equals(vin))
                             {
-                                AddLogItem("Set fields successful, VIN:" + pi.VIN);
+                                if(trionic8.SetVIN(pi.VIN))
+                                {
+                                    AddLogItem("Set fields successful, VIN:" + pi.VIN);
+                                }
+                                else
+                                {
+                                    AddLogItem("Set fields failed, VIN:" + pi.VIN);
+                                }
                             }
-                            else
-                            {
-                                AddLogItem("Set fields failed, VIN:" + pi.VIN);
-                            }
-                        }
 
-                        if (!pi.TopSpeed.Equals(topspeed))
-                        {
-                            if(trionic8.SetTopSpeed(pi.TopSpeed))
+                            if (!pi.TopSpeed.Equals(topspeed))
                             {
-                                AddLogItem("Set fields successful, TopSpeed:" + pi.TopSpeed);
+                                if(trionic8.SetTopSpeed(pi.TopSpeed))
+                                {
+                                    AddLogItem("Set fields successful, TopSpeed:" + pi.TopSpeed);
+                                }
+                                else
+                                {
+                                    AddLogItem("Set fields failed, TopSpeed:" + pi.TopSpeed);
+                                }
                             }
-                            else
-                            {
-                                AddLogItem("Set fields failed, TopSpeed:" + pi.TopSpeed);
-                            }
-                        }
 
-                        if (!pi.E85.ToString("F2").Equals(e85.ToString("F2")))
-                        {
-                            if(trionic8.SetE85Percentage(pi.E85))
+                            if (!pi.E85.ToString("F2").Equals(e85.ToString("F2")))
                             {
-                                AddLogItem("Set fields successful, E85Percentage:" + pi.E85);
+                                if(trionic8.SetE85Percentage(pi.E85))
+                                {
+                                    AddLogItem("Set fields successful, E85Percentage:" + pi.E85);
+                                }
+                                else
+                                {
+                                    AddLogItem("Set fields failed, E85Percentage:" + pi.E85);
+                                }
                             }
-                            else
-                            {
-                                AddLogItem("Set fields failed, E85Percentage:" + pi.E85);
-                            }
-                        }
 
-                        if (!pi.Oil.ToString("F2").Equals(oil.ToString("F2")))
-                        {
-                            if(trionic8.SetOilQuality(pi.Oil))
+                            if (!pi.Oil.ToString("F2").Equals(oil.ToString("F2")))
                             {
-                                AddLogItem("Set fields successful, OilQuality:" + pi.Oil);
-                            }
-                            else
-                            {
-                                AddLogItem("Set fields failed, OilQuality:" + pi.Oil);
+                                if(trionic8.SetOilQuality(pi.Oil))
+                                {
+                                    AddLogItem("Set fields successful, OilQuality:" + pi.Oil);
+                                }
+                                else
+                                {
+                                    AddLogItem("Set fields failed, OilQuality:" + pi.Oil);
+                                }
                             }
                         }
                     }
-                }
-                trionic8.Cleanup();
+                    trionic8.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
@@ -2000,50 +2096,95 @@ namespace TrionicCANFlasher
                 EnableUserInput(false);
                 AddLogItem("Opening connection");
                 trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                if (trionic8.openDevice(true))
+                await RunOnWorker(trionic8, () =>
                 {
-                    EditParameters pi = new EditParameters();
-                    pi.setECU(ECU.MOTRONIC96);
-
-                    int topspeed = trionic8.GetTopSpeed();
-                    pi.TopSpeed = topspeed;
-
-                    string vin = trionic8.GetVehicleVIN();
-                    pi.VIN = vin;
-
-                    if (await pi.ShowDialog<bool>(this))
+                    if (trionic8.openDevice(true))
                     {
-                        if (!pi.TopSpeed.Equals(topspeed))
-                        {
-                            if(trionic8.SetTopSpeed(pi.TopSpeed))
-                            {
-                                AddLogItem("Set fields successful, TopSpeed:" + pi.TopSpeed);
-                            }
-                            else
-                            {
-                                AddLogItem("Set fields failed, TopSpeed:" + pi.TopSpeed);
-                            }
-                        }
+                        int topspeed = trionic8.GetTopSpeed();
 
-                        if (!pi.VIN.Equals(vin))
+                        string vin = trionic8.GetVehicleVIN();
+
+                        EditedParameters pi = ShowEditParameters(ECU.MOTRONIC96, dlg =>
                         {
-                            if (trionic8.ProgramVIN(pi.VIN))
+                            dlg.TopSpeed = topspeed;
+                            dlg.VIN = vin;
+                        });
+
+                        if (pi != null)
+                        {
+                            if (!pi.TopSpeed.Equals(topspeed))
                             {
-                                AddLogItem("Set fields successful, VIN:" + pi.VIN);
+                                if(trionic8.SetTopSpeed(pi.TopSpeed))
+                                {
+                                    AddLogItem("Set fields successful, TopSpeed:" + pi.TopSpeed);
+                                }
+                                else
+                                {
+                                    AddLogItem("Set fields failed, TopSpeed:" + pi.TopSpeed);
+                                }
                             }
-                            else
+
+                            if (!pi.VIN.Equals(vin))
                             {
-                                AddLogItem("Set fields failed, VIN:" + pi.VIN);
+                                if (trionic8.ProgramVIN(pi.VIN))
+                                {
+                                    AddLogItem("Set fields successful, VIN:" + pi.VIN);
+                                }
+                                else
+                                {
+                                    AddLogItem("Set fields failed, VIN:" + pi.VIN);
+                                }
                             }
                         }
                     }
-                }
 
-                trionic8.Cleanup();
+                    trionic8.Cleanup();
+                });
                 AddLogItem("Connection closed");
                 EnableUserInput(true);
             }
             LogManager.Flush();
+        }
+
+        // What EditParameters held when "Write Fields to ECU" closed it, for the worker: the dialog's controls
+        // can only be read on the UI thread
+        private class EditedParameters
+        {
+            public bool Convertible, SAI, Highoutput, Biopower, ClutchStart;
+            public DiagnosticType DiagnosticType;
+            public TankType TankType;
+            public string VIN;
+            public int TopSpeed;
+            public float E85, Oil;
+        }
+
+        // From the worker: shows EditParameters, fill sets it up on the UI thread. null unless the user chose to write.
+        private EditedParameters ShowEditParameters(ECU ecu, Action<EditParameters> fill)
+        {
+            return Dialogs.Wait(async () =>
+            {
+                EditParameters pi = new EditParameters();
+                pi.setECU(ecu);
+                fill(pi);
+                if (!await pi.ShowDialog<bool>(this))
+                {
+                    return null;
+                }
+                return new EditedParameters
+                {
+                    Convertible = pi.Convertible,
+                    SAI = pi.SAI,
+                    Highoutput = pi.Highoutput,
+                    Biopower = pi.Biopower,
+                    ClutchStart = pi.ClutchStart,
+                    DiagnosticType = pi.DiagnosticType,
+                    TankType = pi.TankType,
+                    VIN = pi.VIN,
+                    TopSpeed = pi.TopSpeed,
+                    E85 = pi.E85,
+                    Oil = pi.Oil,
+                };
+            });
         }
 
         private async void btnReadECUcalibration_Click(object sender, RoutedEventArgs e)
@@ -2062,15 +2203,27 @@ namespace TrionicCANFlasher
                             EnableUserInput(false);
                             AddLogItem("Opening connection");
                             trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                            if (trionic8.openDevice(false))
+                            bool opened = false;
+                            bool ok = await RunOnWorker(trionic8, () =>
                             {
-                                Thread.Sleep(1000);
+                                opened = trionic8.openDevice(false);
+                                if (opened)
+                                {
+                                    Thread.Sleep(1000);
 
-                                trionic8.SaveAllDID(fileName);
+                                    trionic8.SaveAllDID(fileName);
 
-                                dtstart = DateTime.Now;
-                                AddLogItem("Acquiring FLASH content");
-                                DoEvents();
+                                    dtstart = DateTime.Now;
+                                    AddLogItem("Acquiring FLASH content");
+                                }
+                                else
+                                {
+                                    AddLogItem("Unable to connect to ME9.6 ECU");
+                                    trionic8.Cleanup();
+                                }
+                            });
+                            if (opened && ok)
+                            {
                                 var args = new FlashReadArguments() { FileName = fileName, start = (int)FileME96.EngineCalibrationAddress, end = (int)FileME96.EngineCalibrationAddressEnd };
                                 BackgroundWorker bgWorker;
                                 bgWorker = new BackgroundWorker();
@@ -2080,8 +2233,6 @@ namespace TrionicCANFlasher
                             }
                             else
                             {
-                                AddLogItem("Unable to connect to ME9.6 ECU");
-                                trionic8.Cleanup();
                                 EnableUserInput(true);
                                 AddLogItem("Connection terminated");
                             }
@@ -2115,12 +2266,8 @@ namespace TrionicCANFlasher
                         EnableUserInput(false);
                         AddLogItem("Opening connection");
                         trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                        if (trionic8.openDevice(false))
+                        if (await OpenOnWorker(trionic8, () => trionic8.openDevice(false), "Update FLASH content", "Unable to connect to Trionic 8 ECU"))
                         {
-                            Thread.Sleep(1000);
-                            dtstart = DateTime.Now;
-                            AddLogItem("Update FLASH content");
-                            DoEvents();
                             BackgroundWorker bgWorker;
                             bgWorker = new BackgroundWorker();
                             bgWorker.DoWork += new DoWorkEventHandler(trionic8.RestoreT8);
@@ -2128,20 +2275,13 @@ namespace TrionicCANFlasher
                             bgWorker.RunWorkerAsync(fileName);
 
                         }
-                        else
-                        {
-                            AddLogItem("Unable to connect to Trionic 8 ECU");
-                            trionic8.Cleanup();
-                            EnableUserInput(true);
-                            AddLogItem("Connection terminated");
-                        }
                     }
                 }
             }
             LogManager.Flush();
         }
 
-        private void btnLogData_Click(object sender, RoutedEventArgs e)
+        private async void btnLogData_Click(object sender, RoutedEventArgs e)
         {
             if ((string)btnLogData.Content != "Stop" && (string)btnLogData.Content != "Busy..")
             {
@@ -2157,7 +2297,9 @@ namespace TrionicCANFlasher
 
                     EnableUserInput(false);
                     AddLogItem("Opening connection");
-                    if (trionic5.openDevice())
+                    bool opened = false;
+                    await RunOnWorker(trionic5, () => opened = trionic5.openDevice());
+                    if (opened)
                     {
                         StartBGWorkerLog(trionic5);
                         btnLogData.Content = "Stop";
@@ -2179,7 +2321,9 @@ namespace TrionicCANFlasher
 
                     EnableUserInput(false);
                     AddLogItem("Opening connection");
-                    if (trionic7.openDevice())
+                    bool opened = false;
+                    await RunOnWorker(trionic7, () => opened = trionic7.openDevice());
+                    if (opened)
                     {
                         StartBGWorkerLog(trionic7);
                         btnLogData.Content = "Stop";
@@ -2205,7 +2349,9 @@ namespace TrionicCANFlasher
                     EnableUserInput(false);
                     AddLogItem("Opening connection");
                     trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                    if (trionic8.openDevice(false))
+                    bool opened = false;
+                    await RunOnWorker(trionic8, () => opened = trionic8.openDevice(false));
+                    if (opened)
                     {
                         StartBGWorkerLog(trionic8);
                         btnLogData.Content = "Stop";
@@ -2227,7 +2373,10 @@ namespace TrionicCANFlasher
                 // Reset logging to setting
                 UpdateLogManager();
                 btnLogData.Content = "Log Data";
-                EnableUserInput(true);
+                // the logger stops within a second, then bgWorker_RunWorkerCompleted closes the connection and gives
+                // the input back. A new operation started before that lost its connection to that Cleanup.
+                // A logger that ended by itself (device gone) already gave the input back: the button stays usable.
+                btnLogData.IsEnabled = !m_operationRunning;
             }
         }
 
@@ -2495,16 +2644,19 @@ namespace TrionicCANFlasher
                     EnableUserInput(false);
                     AddLogItem("Opening connection");
                     trionic8.SecurityLevel = AccessLevel.AccessLevel01;
-                    if (trionic8.openDevice(true))
+                    await RunOnWorker(trionic8, () =>
                     {
-                        trionic8.LoadAllDID(fileName);
-                    }
-                    else
-                    {
-                        AddLogItem("Unable to connect to ME9.6 ECU");
-                    }
+                        if (trionic8.openDevice(true))
+                        {
+                            trionic8.LoadAllDID(fileName);
+                        }
+                        else
+                        {
+                            AddLogItem("Unable to connect to ME9.6 ECU");
+                        }
 
-                    trionic8.Cleanup();
+                        trionic8.Cleanup();
+                    });
                     EnableUserInput(true);
                     AddLogItem("Connection terminated");
                 }
