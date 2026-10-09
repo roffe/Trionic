@@ -82,6 +82,8 @@ namespace TrionicCANLib.API
         private const int ChecksumTimeoutmS = 10000;
         private const int GeneralTimeoutmS = 1000;
         private const int EraseTimeoutmS = 60000;
+        // Resends of an unanswered FLASH address or data frame that MyBooty only stores (see ProgramFlashBin)
+        private const int FlashResends = 2;
 
         private string CR = "\r";
         private string NL = "\n";
@@ -247,10 +249,10 @@ S9035000AC";
         /// <summary>
         /// Determine current ECU
         /// </summary>
+        /// <param name="chiptypes">GetChipTypes() reply</param>
         /// <returns>Type of ECU or unknown</returns>
-        private ECUType DetermineECU()
+        private ECUType DetermineECU(byte[] chiptypes)
         {
-            byte[] chiptypes = GetChipTypes();
             byte[] footer = getECUFooter();
             string flashzize = "256 kB";
 
@@ -307,16 +309,40 @@ S9035000AC";
             return 0;
         }
 
-        public void WriteFlash(string a_fileName)
+        /// <summary>
+        /// Uploads MyBooty, then erases, programs and checks the FLASH. Every step and failure is reported through onCanInfo.
+        /// </summary>
+        /// <returns>Done when the BIN file was programmed and the bootloader confirmed its checksum, Cancelled when
+        /// the user said No or the file doesn't fit the ECU (nothing erased), else Failed</returns>
+        public WriteFlashResult WriteFlash(string a_fileName)
         {
-            UploadBootLoader();
-            // if (UploadBootLoader())
+            bool uploaded = UploadBootLoader();
             {
                 Thread.Sleep(200);
+                // Only MyBooty answers C9, with FLASH start 0x40000 (0x60000 in its notes for T5.2) in reply bytes 2-5,
+                // GetChipTypes [5..2]. Zeros: nothing answered. Nothing has been erased yet, so stop.
+                byte[] chiptypes = GetChipTypes();
+                if (chiptypes[5] != 0x00 || (chiptypes[4] != 0x04 && chiptypes[4] != 0x06) || chiptypes[3] != 0x00 || chiptypes[2] != 0x00)
+                {
+                    CastInfoEvent("!!! ERROR !!! The bootloader is not answering, this attempt did not touch the FLASH", ActivityType.ConvertingFile);
+                    if (!uploaded)
+                    {
+                        // MyBooty left running by a failed FLASH attempt may only be out of reach (CAN still down), with
+                        // the FLASH half written: switching off then means BDM
+                        CastInfoEvent("If an earlier FLASH attempt failed, don't switch the ECU off: check the connection and retry !!!", ActivityType.ConvertingFile);
+                    }
+                    return WriteFlashResult.Failed;
+                }
+                if (!uploaded)
+                {
+                    // A FLASH attempt that failed leaves MyBooty running, and it refuses a new upload: its A5 and data
+                    // commands program FLASH, from 0x40000 only.
+                    CastInfoEvent("The bootloader is still running from an earlier attempt, using it", ActivityType.ConvertingFile);
+                }
                 FileInfo fi = new FileInfo(a_fileName);
                 bool OkToUpgrade = true;
 
-                ECUType ECU_type = DetermineECU();
+                ECUType ECU_type = DetermineECU(chiptypes);
 
                 switch (ECU_type)
                 {
@@ -362,7 +388,19 @@ S9035000AC";
                 if (OkToUpgrade)
                 {
                     CastInfoEvent("Starting FLASH update session...", ActivityType.ConvertingFile);
-                    UpgradeResult result = UpgradeECU(a_fileName, ECU_type);
+                    UpgradeResult result;
+                    try
+                    {
+                        result = UpgradeECU(a_fileName, ECU_type);
+                    }
+                    catch (Exception ex)
+                    {
+                        // e.g. the adapter was unplugged: MyBooty keeps running and the FLASH may be half written,
+                        // the user needs the advice below as much as after a failure the bootloader reported
+                        logger.Debug(ex, "FLASH update interrupted");
+                        CastInfoEvent("FLASHing was interrupted: " + ex.Message, ActivityType.ConvertingFile);
+                        result = UpgradeResult.ProgrammingFailed;
+                    }
 
                     switch (result)
                     {
@@ -384,7 +422,7 @@ S9035000AC";
                             CastInfoEvent("!!! FAILURE !!! Could not erase the FLASH in your ECU :-(", ActivityType.ConvertingFile);
                             break;
                         case UpgradeResult.ChecksumFailed:
-                            CastInfoEvent("!!! FAILURE !!! Checksums don't match after FLASHing :-(", ActivityType.ConvertingFile);
+                            CastInfoEvent("!!! FAILURE !!! Checksums don't match or could not be read after FLASHing :-(", ActivityType.ConvertingFile);
                             break;
                         default:
                             CastInfoEvent("!!! ERROR!!! There was a problem I haven't catered for ???", ActivityType.ConvertingFile);
@@ -401,14 +439,27 @@ S9035000AC";
                             CastInfoEvent("You should retry FLASHing your BIN file but if it fails", ActivityType.ConvertingFile);
                             CastInfoEvent("again your only option is to try to recover your ECU", ActivityType.ConvertingFile);
                             CastInfoEvent("using a BDM interface !!!", ActivityType.ConvertingFile);
+                            CastInfoEvent("Don't switch the ECU off before you retry !!!", ActivityType.ConvertingFile);
                             break;
                         default:
                             break;
                     }
+                    return result == UpgradeResult.Success ? WriteFlashResult.Done : WriteFlashResult.Failed;
                 }
                 else
                 {
-                    ExitBootloader();
+                    // the user said No or the file doesn't fit the ECU: nothing erased
+                    if (uploaded)
+                    {
+                        ExitBootloader();
+                    }
+                    else
+                    {
+                        // the earlier attempt may have left the FLASH half written: a reset would leave the ECU to BDM
+                        CastInfoEvent("ECU not reset, the bootloader from the earlier attempt keeps running", ActivityType.ConvertingFile);
+                        CastInfoEvent("If that FLASH attempt failed, don't switch the ECU off: retry with a BIN file for this ECU !!!", ActivityType.ConvertingFile);
+                    }
+                    return WriteFlashResult.Cancelled;
                 }
             }
             // device.DisableLogging();
@@ -841,6 +892,29 @@ S9035000AC";
             return true;
         }
 
+        /// <summary>
+        /// The ECU's loader and MyBooty answer each command right away, first byte echoed. An answer that came after
+        /// its wait timed out is still queued: skip it rather than take it for this command's.
+        /// </summary>
+        /// <returns>the answer, or an empty message (id 0) when none came in time</returns>
+        private CANMessage waitForReply(byte a_command, int a_timeout)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < a_timeout)
+            {
+                CANMessage response = m_canListener.waitMessage(a_timeout - (int)sw.ElapsedMilliseconds);
+                if (response.getID() != 0 && (byte)response.getData() == a_command)
+                {
+                    return response;
+                }
+                if (response.getID() != 0)
+                {
+                    logger.Debug("Skipped a late answer to " + ((byte)response.getData()).ToString("X2") + " waiting for " + a_command.ToString("X2"));
+                }
+            }
+            return new CANMessage();
+        }
+
         public byte[] sendBootLoaderEraseCommand()
         {
             CANMessage msg = new CANMessage(0x005, 0, 8);
@@ -859,7 +933,7 @@ S9035000AC";
                     if (!canUsbDevice.sendMessage(msg))
                         logger.Debug("Couldn't send message");
 
-                    response = m_canListener.waitMessage(100);
+                    response = waitForReply(0xC0, 100);
                     msg.setID(0);
                 } while (response.getID() == 0 && --ret > 0);
             }
@@ -871,7 +945,7 @@ S9035000AC";
                 if (!canUsbDevice.sendMessage(msg))
                     logger.Debug("Couldn't send message");
 
-                response = m_canListener.waitMessage(EraseTimeoutmS);
+                response = waitForReply(0xC0, EraseTimeoutmS);
             }
 
             data = response.getData();
@@ -883,6 +957,7 @@ S9035000AC";
 
 
         // sending A5 address command for uploading bootloader and flash file
+        // returns the reply, first byte in [7], or no bytes when nothing answered
         public byte[] sendBootloaderAddressCommand(Int32 address, byte len)
         {
             CANMessage msg = new CANMessage(0x005, 0, 8);
@@ -901,10 +976,14 @@ S9035000AC";
             if (!canUsbDevice.sendMessage(msg))
             {
                 logger.Debug("Couldn't send message");
-                return retData;
+                return new byte[0];
             }
 
-            response = m_canListener.waitMessage(GeneralTimeoutmS);
+            response = waitForReply(0xA5, GeneralTimeoutmS);
+            if (response.getID() == 0)
+            {
+                return new byte[0];
+            }
             data = response.getData();
 
             for (int i = 0; i < 8; i++)
@@ -945,6 +1024,7 @@ S9035000AC";
 
 
         // sending data from bootloader or flash file 
+        // returns the reply, first byte in [7], or no bytes when nothing answered
         public byte[] sendBootloaderDataCommand(byte[] data, byte len)
         {
             CANMessage msg = new CANMessage(0x005, 0, 8);
@@ -968,7 +1048,7 @@ S9035000AC";
                     if (!canUsbDevice.sendMessage(msg))
                         logger.Debug("Couldn't send message");
 
-                    response = m_canListener.waitMessage(100);
+                    response = waitForReply(data[0], 100);
                     msg.setID(0);
                 } while (response.getID() == 0 && --ret > 0);
             }
@@ -980,9 +1060,14 @@ S9035000AC";
                 if (!canUsbDevice.sendMessage(msg))
                     logger.Debug("Couldn't send message");
 
-                response = m_canListener.waitMessage(GeneralTimeoutmS);
+                response = waitForReply(data[0], GeneralTimeoutmS);
             }
 
+            // the first frame of a block echoes 00: an unanswered frame can't look like zeros
+            if (response.getID() == 0)
+            {
+                return new byte[0];
+            }
             uldata = response.getData();
 
             for (int i = 0; i < 8; i++)
@@ -1417,7 +1502,7 @@ S9035000AC";
                 logger.Debug("Couldn't send message");
             }
 
-            response = m_canListener.waitMessage(GeneralTimeoutmS);
+            response = waitForReply(0xC2, GeneralTimeoutmS);
             data = response.getData();
 
             for (int i = 2; i < 8; i++)
@@ -1449,7 +1534,7 @@ S9035000AC";
                     if (!canUsbDevice.sendMessage(msg))
                         logger.Debug("Couldn't send message");
 
-                    response = m_canListener.waitMessage(100);
+                    response = waitForReply(0xC8, 100);
                     msg.setID(0);
                 } while (response.getID() == 0 && --ret > 0);
             }
@@ -1461,7 +1546,7 @@ S9035000AC";
                 if (!canUsbDevice.sendMessage(msg))
                     logger.Debug("Couldn't send message");
 
-                response = m_canListener.waitMessage(ChecksumTimeoutmS);
+                response = waitForReply(0xC8, ChecksumTimeoutmS);
             }
 
             data = response.getData();
@@ -1560,7 +1645,7 @@ S9035000AC";
                 response = new CANMessage();
                 response = m_canListener.waitForMessage(0x00C, 1000);*/
 
-                response = m_canListener.waitMessage(GeneralTimeoutmS);
+                response = waitForReply(0xC9, GeneralTimeoutmS);
                 data = response.getData();
 
                 for (int i = 2; i < 8; i++)
@@ -2028,7 +2113,19 @@ S9035000AC";
                         byte[] dataframe = new byte[8];
 
                         // send a bootloader address message
+                        // MyBooty only stores the address and count: an unanswered one is resent
                         byte[] result = sendBootloaderAddressCommand((start + bytesread), 0x80);
+                        for (int resend = 0; result.Length == 0 && resend < FlashResends; resend++)
+                        {
+                            result = sendBootloaderAddressCommand((start + bytesread), 0x80);
+                        }
+                        if ((result.Length != 8) || (result[7] != 0xA5) || (result[6] != 0x00))
+                        {
+                            string BytesSoFar = bytesread.ToString("X6");
+                            CastInfoEvent("FLASHing Failed after: 0x" + BytesSoFar + " Bytes, " +
+                                (result.Length == 0 ? "the bootloader did not answer" : "bootloader error " + result[6].ToString("X2")) + " !!!", ActivityType.UploadingFlash);
+                            return false;
+                        }
 
                         // Construct and send the bootloader frames
                         // NOTE the last frame sent may have less than 7 real data bytes but 7 bytes are always sent. In this case the unnecessary bytes
@@ -2047,10 +2144,18 @@ S9035000AC";
                             if ((i % 7 == 6) || (i == 0x80 - 1))
                             {
                                 byte[] result2 = sendBootloaderDataCommand(dataframe, 8);
-                                if ((byte)result2.GetValue(6) != 0x00)
+                                // MyBooty copies a frame into its buffer at the frame's offset: an unanswered one is resent.
+                                // The last frame fills the buffer and makes it program the block, a resend would program
+                                // the block again: never resent.
+                                for (int resend = 0; result2.Length == 0 && i != 0x80 - 1 && resend < FlashResends; resend++)
+                                {
+                                    result2 = sendBootloaderDataCommand(dataframe, 8);
+                                }
+                                if ((result2.Length != 8) || (result2[7] != dataframe[0]) || (result2[6] != 0x00))
                                 {
                                     string BytesSoFar = bytesread.ToString("X6");
-                                    CastInfoEvent("FLASHing Failed after: 0x" + BytesSoFar + " Bytes !!!", ActivityType.UploadingFlash);
+                                    CastInfoEvent("FLASHing Failed after: 0x" + BytesSoFar + " Bytes, " +
+                                        (result2.Length == 0 ? "the bootloader did not answer" : "bootloader error " + result2[6].ToString("X2")) + " !!!", ActivityType.UploadingFlash);
                                     return false;
                                 }
                             }
@@ -2241,7 +2346,7 @@ S9035000AC";
             {
                 CastInfoEvent("Bootloader uploaded", ActivityType.StartDownloadingFlash);
                 CastInfoEvent("Determining ECU type", ActivityType.StartDownloadingFlash);
-                ECUType type = DetermineECU();
+                ECUType type = DetermineECU(GetChipTypes());
 
                 // No point in fetching two copies on t55ast52 (And t52 only has 128K of flash)
                 UInt32 start = 0x40000;
@@ -2434,7 +2539,8 @@ S9035000AC";
         public bool VerifyChecksum()
         {
             byte[] res = getChecksum();
-            if (res.Length == 8)
+            // getChecksum returns zeros when nothing answered: no C8 echo
+            if (res.Length == 8 && res[7] == 0xC8)
             {
                 //if ((byte)checksumbytes.GetValue(6) != 0x00) retval = false;
                 if (res[6] == 0x00)
@@ -2458,7 +2564,7 @@ S9035000AC";
                     return false;
                 }
             }
-            CastInfoEvent("Could NOT Determine Checksum !!!", ActivityType.CalculatingChecksum);
+            CastInfoEvent("Could NOT read the FLASH Checksum, the bootloader did not answer !!!", ActivityType.CalculatingChecksum);
             return false;
         }
 
@@ -2482,8 +2588,15 @@ S9035000AC";
 
         public void ExitBootloader()
         {
-            sendC2Command(); // reset ECU
-            CastInfoEvent("ECU is reset", ActivityType.FinishedFlashing);
+            // reset ECU. sendC2Command drops reply bytes 0-1 and returns zeros when nothing answered
+            if (Array.Exists(sendC2Command(), b => b != 0))
+            {
+                CastInfoEvent("ECU is reset", ActivityType.FinishedFlashing);
+            }
+            else
+            {
+                CastInfoEvent("Bootloader did not confirm the reset, switch the ECU off and on", ActivityType.FinishedFlashing);
+            }
         }
 
         /// <summary>
@@ -2532,6 +2645,19 @@ S9035000AC";
         EraseFailed,
         ProgrammingFailed,
         ChecksumFailed
+    }
+
+    /// <summary>
+    /// What Trionic5.WriteFlash did
+    /// </summary>
+    public enum WriteFlashResult : int
+    {
+        /// <summary>programmed, and the bootloader confirmed the checksum</summary>
+        Done,
+        /// <summary>not attempted, nothing erased: the user said No to the conversion question, or the file doesn't fit the ECU</summary>
+        Cancelled,
+        /// <summary>the bootloader didn't answer, or erasing, programming or the checksum failed</summary>
+        Failed
     }
 
     public enum ECUType : int
