@@ -163,7 +163,7 @@ namespace TrionicCANLib.API
 
         public bool openDevice(bool requestSecurityAccess)
         {
-            CastInfoEvent("Open called in Trionic8", ActivityType.ConvertingFile);
+            CastInfoEvent("Open called in Trionic 8", ActivityType.ConvertingFile);
             MM_BeginPeriod(1);
             OpenResult openResult = OpenResult.OpenError;
             try
@@ -177,7 +177,7 @@ namespace TrionicCANLib.API
 
             if (openResult != OpenResult.OK)
             {
-                CastInfoEvent("Open failed in Trionic8", ActivityType.ConvertingFile);
+                CastInfoEvent("Open failed in Trionic 8", ActivityType.ConvertingFile);
                 canUsbDevice.close();
                 MM_EndPeriod(1);
                 return false;
@@ -192,7 +192,7 @@ namespace TrionicCANLib.API
 
             if (requestSecurityAccess)
             {
-                CastInfoEvent("Open succeeded in Trionic8", ActivityType.ConvertingFile);
+                CastInfoEvent("Open succeeded in Trionic 8", ActivityType.ConvertingFile);
                 InitializeSession();
                 CastInfoEvent("Session initialized", ActivityType.ConvertingFile);
                 // read some data ... 
@@ -600,6 +600,9 @@ namespace TrionicCANLib.API
                 CANMessage response = new CANMessage();
                 ulong data = 0;
                 int timeout = timeoutP2ct;
+                // a silent ECU (unpowered, not on the bus) kept this loop going forever: give up after P2*CAN
+                // without the answer, the window a busy ECU gets again with each 0x78 it sends
+                Stopwatch noAnswer = Stopwatch.StartNew();
                 while (!_success && msgcnt < 2)
                 {
                     response = new CANMessage();
@@ -609,7 +612,10 @@ namespace TrionicCANLib.API
                     if (response.getCanData(1) == 0x7F && response.getCanData(2) == 0x1A && response.getCanData(3) == 0x78)
                     {
                         logger.Debug("RequestCorrectlyReceived-ResponsePending");
-                        timeout *= 3;
+                        // no single wait past that window: *3 alone made it 36 s after five 0x78, hours after
+                        // ten, and went negative (no wait at all, nothing read) after fifteen
+                        timeout = Math.Min(timeout * 3, timeoutP2ce);
+                        noAnswer.Restart();
                     }
                     else if (data == 0)
                     {
@@ -619,6 +625,11 @@ namespace TrionicCANLib.API
                     {
                         _success = true;
                         msgcnt++;
+                    }
+                    if (!_success && noAnswer.ElapsedMilliseconds >= timeoutP2ce)
+                    {
+                        CastInfoEvent("No answer from the ECU to ReadDataByIdentifier 0x" + _pid.ToString("X2"), ActivityType.ConvertingFile);
+                        break;
                     }
                 }
 
@@ -786,9 +797,16 @@ namespace TrionicCANLib.API
             return retval;
         }
 
-        // ReadDataByIdentifier 
+        // ReadDataByIdentifier
         public byte[] RequestECUInfo(uint _pid)
         {
+            bool answered;
+            return RequestECUInfo(_pid, out answered);
+        }
+
+        private byte[] RequestECUInfo(uint _pid, out bool answered)
+        {
+            answered = false;
             byte[] retval = new byte[2];
             byte[] rx_buffer = new byte[1024];
             int rx_pnt = 0;
@@ -810,6 +828,8 @@ namespace TrionicCANLib.API
                 CANMessage response = new CANMessage();
                 ulong data = 0;
                 int timeout = timeoutP2ct;
+                // as in RequestECUInfoAsString: P2*CAN without the answer, restarted by each 0x78
+                Stopwatch noAnswer = Stopwatch.StartNew();
                 while (!_success && msgcnt < 2)
                 {
                     response = new CANMessage();
@@ -819,7 +839,8 @@ namespace TrionicCANLib.API
                     if (response.getCanData(1) == 0x7F && response.getCanData(2) == 0x1A && response.getCanData(3) == 0x78)
                     {
                         logger.Debug("RequestCorrectlyReceived-ResponsePending");
-                        timeout *= 3;
+                        timeout = Math.Min(timeout * 3, timeoutP2ce);
+                        noAnswer.Restart();
                     }
                     else if (data == 0)
                     {
@@ -830,7 +851,13 @@ namespace TrionicCANLib.API
                         _success = true;
                         msgcnt++;
                     }
+                    if (!_success && noAnswer.ElapsedMilliseconds >= timeoutP2ce)
+                    {
+                        CastInfoEvent("No answer from the ECU to ReadDataByIdentifier 0x" + _pid.ToString("X2"), ActivityType.ConvertingFile);
+                        break;
+                    }
                 }
+                answered = _success;
 
                 if (response.getCanData(1) == 0x5A)
                 {
@@ -1572,7 +1599,14 @@ namespace TrionicCANLib.API
         public bool SetPI01(bool convertible, bool sai, bool highoutput, bool biopower, DiagnosticType diagnosticType, bool clutchStart, TankType tankType)
         {
             bool retval = false;
-            byte[] data = RequestECUInfo(0x01);
+            bool answered;
+            byte[] data = RequestECUInfo(0x01, out answered);
+            // unanswered, data is zeros: written back with the bits set below, the bits of PI 01 they don't
+            // cover would be cleared
+            if (!answered)
+            {
+                return false;
+            }
             CANMessage msg = new CANMessage(0x7E0, 0, 7);
             ulong cmd = 0x0000000000013B06;
             // -------C
@@ -2842,6 +2876,8 @@ namespace TrionicCANLib.API
                         CastInfoEvent("Failed to download SRAM content", ActivityType.DownloadingSRAM);
                         _stallKeepAlive = false;
                         workEvent.Result = false;
+                        // without it the retries went on past maxRetries, forever
+                        return;
                     }
                 }
                 SendKeepAlive();
@@ -4871,10 +4907,23 @@ namespace TrionicCANLib.API
                 m_canListener.setupWaitMessage(0x545);
 
                 bool more_errors = true;
+                // a CIM that went quiet gave empty frames, each listed as DTC P0000, forever: wait out P2*CAN
+                // from its last frame for the next one, then stop
+                Stopwatch noAnswer = Stopwatch.StartNew();
                 while (more_errors)
                 {
                     CANMessage responseDTC = new CANMessage();
                     responseDTC = m_canListener.waitMessage(timeoutP2ct);
+                    if (responseDTC.getData() == 0)
+                    {
+                        if (noAnswer.ElapsedMilliseconds >= timeoutP2ce)
+                        {
+                            CastInfoEvent("No more answers from the CIM", ActivityType.ConvertingFile);
+                            more_errors = false;
+                        }
+                        continue;
+                    }
+                    noAnswer.Restart();
 
                     // Read until response:   No more errors, status == 0xFF
                     int dtcStatus = Convert.ToInt32(responseDTC.getCanData(4));
@@ -6257,6 +6306,13 @@ namespace TrionicCANLib.API
                 // what else to do?
                 Send0120();
                 CastInfoEvent("Session ended", ActivityType.FinishedFlashing);
+                if (!success)
+                {
+                    // the GUI said "Operation done" after it, FLASH half-written
+                    _stallKeepAlive = false;
+                    workEvent.Result = false;
+                    return;
+                }
             }
             else
             {
@@ -6874,8 +6930,13 @@ namespace TrionicCANLib.API
                     File.WriteAllBytes(filename, buf);
                     Md5Tools.WriteMd5HashFromByteBuffer(filename, buf);
 
-                    Dictionary<uint, byte[]> dids = ReadDid();
-                    WriteDidFile(filename, dids);
+                    bool complete;
+                    Dictionary<uint, byte[]> dids = ReadDid(out complete);
+                    // part of the DIDs would replace the complete .did file SaveAllDID wrote before the read
+                    if (complete)
+                        WriteDidFile(filename, dids);
+                    else
+                        CastInfoEvent("DID read incomplete, .did file not written", ActivityType.ConvertingFile);
 
                     CastInfoEvent("Download done", ActivityType.FinishedDownloadingFlash);
                     workEvent.Result = true;
@@ -6895,11 +6956,28 @@ namespace TrionicCANLib.API
 
         public Dictionary<uint, byte[]> ReadDid()
         {
+            bool complete;
+            return ReadDid(out complete);
+        }
+
+        private Dictionary<uint, byte[]> ReadDid(out bool complete)
+        {
+            complete = false;
             CastInfoEvent("Start DID read", ActivityType.ConvertingFile);
             Dictionary<uint, byte[]> dids = new Dictionary<uint, byte[]>();
+            // an unanswered DID costs P2*CAN, all 255 of a silent ECU 21 minutes: a lost answer only skips its
+            // DID, three in a row is an ECU that stopped answering
+            int unanswered = 0;
             for (uint i = 0; i < 0xFF; i++)
             {
-                byte[] did = RequestECUInfo(i);
+                bool answered;
+                byte[] did = RequestECUInfo(i, out answered);
+                unanswered = answered ? 0 : unanswered + 1;
+                if (unanswered == 3)
+                {
+                    CastInfoEvent("ECU stopped answering, DID read stopped at 0x" + i.ToString("X2"), ActivityType.ConvertingFile);
+                    return dids;
+                }
                 if (did[0] != 0)
                 {
                     //CastInfoEvent("Read ID 0x" + i.ToString("X"), ActivityType.ConvertingFile);
@@ -6907,6 +6985,7 @@ namespace TrionicCANLib.API
                 }
             }
             CastInfoEvent("Completed DID read", ActivityType.ConvertingFile);
+            complete = true;
 
             return dids;
         }
@@ -7147,6 +7226,13 @@ namespace TrionicCANLib.API
                 // what else to do?
                 Send0120();
                 CastInfoEvent("Session ended", ActivityType.FinishedFlashing);
+                if (!success)
+                {
+                    // the GUI said "Operation done" after it, FLASH half-written
+                    _stallKeepAlive = false;
+                    workEvent.Result = false;
+                    return;
+                }
             }
             else
             {
@@ -7333,11 +7419,16 @@ namespace TrionicCANLib.API
                     }
 
                     ulong data = m_canListener.waitMessage(timeoutP2ce, 0x7E8).getData();
+                    // each wait is P2*CAN, within which a busy ECU sends its next 0x78. Silence in two of them since
+                    // the last 0x78 is an ECU that stopped answering (or went quiet after a refusal), which kept
+                    // this loop going forever; twice the spec because a false give-up leaves the FLASH half-written
+                    int silentWaits = 0;
                     while (true)
                     {
                         // RequestCorrectlyReceived-ResponsePending ($78, RC_RCR-RP)
                         if (getCanData(data, 0) == 0x03 && getCanData(data, 1) == 0x7F && getCanData(data, 2) == 0x36 && getCanData(data, 3) == 0x78)
                         {
+                            silentWaits = 0;
                             //CastInfoEvent("RequestCorrectlyReceived-ResponsePending", ActivityType.UploadingFlash);
                             if (canUsbDevice is CANELM327Device)
                             {
@@ -7354,10 +7445,15 @@ namespace TrionicCANLib.API
                         {
                             CastInfoEvent("Error: " + TranslateErrorCode(getCanData(data, 3)), ActivityType.ConvertingFile);
                         }
-                        //wait for 01 76 00 00 00 00 00 00 
+                        //wait for 01 76 00 00 00 00 00 00
                         else if (getCanData(data, 0) == 0x01 || getCanData(data, 1) == 0x76)
                         {
                             break;
+                        }
+                        else if (data == 0 && ++silentWaits == 2)
+                        {
+                            CastInfoEvent("No answer from the ECU to the data written at 0x" + startAddress.ToString("X6"), ActivityType.UploadingFlash);
+                            return false;
                         }
                         data = m_canListener.waitMessage(timeoutP2ce, 0x7E8).getData();
                     }
@@ -7562,6 +7658,13 @@ namespace TrionicCANLib.API
                 // what else to do?
                 Send0120();
                 CastInfoEvent("Session ended", ActivityType.FinishedFlashing);
+                if (!success)
+                {
+                    // the GUI said "Operation done" after it, FLASH half-written
+                    _stallKeepAlive = false;
+                    workEvent.Result = false;
+                    return;
+                }
             }
             else
             {
@@ -8691,6 +8794,13 @@ namespace TrionicCANLib.API
 
                     CastInfoEvent("Session ended", ActivityType.FinishedFlashing);
                     sw.Stop();
+                    // cleared only once verified: the GUI said "Operation done" after the two failures above
+                    if (_needRecovery)
+                    {
+                        _stallKeepAlive = false;
+                        workEvent.Result = false;
+                        return;
+                    }
                 }
                 else
                 {
@@ -8864,8 +8974,15 @@ namespace TrionicCANLib.API
 
                         canUsbDevice.RequestDeviceReady();
                     }
-                    else
+                    // a loader that stopped answering retried this forever: the same 20 as a block it never acknowledges
+                    else if (++Retries < 20)
                         Problem = true;
+                    else
+                    {
+                        CastInfoEvent("Bootloader does not answer, gave up on block-address: " + currentAddress.ToString("X6"), ActivityType.UploadingFlash);
+                        _stallKeepAlive = false;
+                        return false;
+                    }
                 }
 
                 sw.Stop();
@@ -9115,7 +9232,15 @@ namespace TrionicCANLib.API
 
         public bool SaveAllDID(string filename)
         {
-            Dictionary<uint, byte[]> dids = ReadDid();
+            bool complete;
+            Dictionary<uint, byte[]> dids = ReadDid(out complete);
+            // an ECU that stopped answering (or never did: the ME9.6 read opens without a word to it) gives
+            // part of its DIDs or none, which would replace a .did file saved before under the same name
+            if (!complete)
+            {
+                CastInfoEvent("DID read incomplete, .did file not written", ActivityType.ConvertingFile);
+                return false;
+            }
             WriteDidFile(filename, dids);
 
             return true;
