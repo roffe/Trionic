@@ -371,6 +371,32 @@ namespace TrionicCANLibTest
         }
 
         [TestMethod]
+        public void EraseStartsTheProgressBarFromZero()
+        {
+            byte[] bin = TestBin();
+            FakeT5 ecu = NewEcu(bin);
+            List<string> log = new List<string>();
+            Trionic5 t5 = Connect(ecu, log);
+            t5.onWriteProgress += (sender, e) => log.Add("progress " + e.Percentage);
+            string file = Path.Combine(Path.GetTempPath(), "t5flashtest-" + Guid.NewGuid().ToString("N") + ".bin");
+            File.WriteAllBytes(file, bin);
+            try
+            {
+                Assert.AreEqual(WriteFlashResult.Done, t5.WriteFlash(file));
+            }
+            finally
+            {
+                File.Delete(file);
+            }
+
+            // what the bar shows while the ~12 s erase runs: the last value before "FLASH erased"
+            int erase = log.IndexOf("Erasing FLASH...");
+            int erased = log.FindIndex(s => s.StartsWith("FLASH erased"));
+            Assert.IsTrue(erase > 0 && erased > erase && log.Take(erase).Contains("progress 100"), "the bootloader upload ends at 100%");
+            Assert.AreEqual("progress 0", log.Take(erased).Last(s => s.StartsWith("progress ")), "the erase must not show the upload's 100%");
+        }
+
+        [TestMethod]
         public void WriteFlashStopsWhenTheBootloaderUploadFails()
         {
             byte[] bin = TestBin();

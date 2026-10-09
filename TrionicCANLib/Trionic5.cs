@@ -477,12 +477,12 @@ S9035000AC";
             //            sendCommand(CR, 1);
             // send capital S for T5.2... lowercase s is not supported
             r_swVersion = sendCommand("s", 1);
-            Console.WriteLine(r_swVersion);
+            logger.Debug(r_swVersion);
             //Console.WriteLine("s sent");
             r_swVersion = sendCommand(CR, CR + NL, 20);
             //Console.WriteLine("CR sent");
             //            return trimString(r_swVersion);
-            Console.WriteLine("sw version s: " + r_swVersion);
+            logger.Debug("sw version s: " + r_swVersion);
             r_swVersion = trimString(r_swVersion);
             r_swVersion = r_swVersion.Replace(">", "");
             if (r_swVersion.Length > 12)
@@ -504,7 +504,7 @@ S9035000AC";
             r_swVersion = sendCommand("S", 1);
             r_swVersion = sendCommand(CR, CR + NL);
             r_swVersion = trimString(r_swVersion);
-            Console.WriteLine("sw version S: " + r_swVersion);
+            logger.Debug("sw version S: " + r_swVersion);
             if (r_swVersion.Length > 12)
             {
                 r_swVersion = r_swVersion.Substring(r_swVersion.Length - 12, 12);
@@ -659,7 +659,7 @@ S9035000AC";
         public byte[] getECUFooter()
         {
             byte[] footer = new byte[0x80];
-            Console.WriteLine("Start ECU dump");
+            logger.Debug("Start ECU dump");
             CastInfoEvent("Getting data from ECU", ActivityType.StartDownloadingFooter);
 
             byte[] buffer2 = new byte[6];
@@ -1097,7 +1097,7 @@ S9035000AC";
 
             if (!canUsbDevice.sendMessage(msg))
             {
-                Console.WriteLine("Couldn't send message");
+                logger.Debug("Couldn't send message");
             }
 
             //sw.Stop();
@@ -1125,7 +1125,7 @@ S9035000AC";
             }
             catch (Exception E)
             {
-                Console.WriteLine("Error receiving response to a command in sendCommand: " + E.Message);
+                logger.Debug("Error receiving response to a command in sendCommand: " + E.Message);
             }
             return retString;
         }
@@ -1155,7 +1155,7 @@ S9035000AC";
             }
             catch (Exception E)
             {
-                Console.WriteLine("Error receiving response on command in sendCommand 2: " + E.Message);
+                logger.Debug("Error receiving response on command in sendCommand 2: " + E.Message);
             }
             return retString;
         }
@@ -1189,7 +1189,7 @@ S9035000AC";
             }
             catch (Exception E)
             {
-                Console.WriteLine("Error receiving response on command 3: " + E.Message);
+                logger.Debug("Error receiving response on command 3: " + E.Message);
             }
             return retString;
         }
@@ -1222,7 +1222,7 @@ S9035000AC";
             }
             catch (Exception E)
             {
-                Console.WriteLine("Error receiving response on command 3: " + E.Message);
+                logger.Debug("Error receiving response on command 3: " + E.Message);
             }
             return retString;
         }
@@ -1293,7 +1293,7 @@ S9035000AC";
              {
                  response = m_canListener.waitForMessage(0x00C, 1000);
                  DumpCanMsg(response, false);
-                 Console.WriteLine("received C4 command");
+                 logger.Debug("received C4 command");
                  //throw new Exception("Error receiving data (1)");
              }
 
@@ -1334,7 +1334,7 @@ S9035000AC";
              {
                  response = m_canListener.waitForMessage(0x00C, 1000);
                  DumpCanMsg(response, false);
-                 Console.WriteLine("received C4 command");
+                 logger.Debug("received C4 command");
                  //throw new Exception("Error receiving data (1)");
              }
 
@@ -1384,7 +1384,7 @@ S9035000AC";
             }
             catch (Exception E)
             {
-                Console.WriteLine("Failed to write to logfile: " + E.Message);
+                logger.Debug("Failed to write to logfile: " + E.Message);
             }
         }
 
@@ -1405,7 +1405,7 @@ S9035000AC";
             if ((byte)response.getData() != 0xC6)
             {
                 byte b = (byte)response.getData();
-                Console.WriteLine("Error rx data (2): " + b.ToString("X2"));
+                logger.Debug("Error rx data (2): " + b.ToString("X2"));
                 //throw new Exception("Error receiving data (2)");
 
             }
@@ -1433,7 +1433,7 @@ S9035000AC";
             if (!canUsbDevice.sendMessage(ack))
             {
                 //   throw new Exception("Couldn't send message");
-                Console.WriteLine("Couldn't send message");
+                logger.Debug("Couldn't send message");
             }
         }
 
@@ -1671,7 +1671,7 @@ S9035000AC";
         /// <returns></returns>
         public bool UploadBootLoader()
         {
-            Console.WriteLine("Uploading bootloader");
+            logger.Debug("Uploading bootloader");
 
             // Prevent ECU from causing trouble after power on-reset
             m_canListener.FlushQueue();
@@ -1681,7 +1681,6 @@ S9035000AC";
             using (StringReader sr = new StringReader(MyBooty))
             {
 
-                string extraInfo = string.Empty;
                 string line = string.Empty;
                 int bytestransmitted = 0;
                 int bytesread = 0;
@@ -1696,12 +1695,7 @@ S9035000AC";
                             byte[] res = sendBootloaderAddressCommand(0, 0);
                             if ((res.Length != 8) || (res[7] != 0xA5) || (res[6] != 0x00))
                             {
-                                extraInfo = "0L" + res.Length.ToString("X2") + " ";
-                                foreach (byte b in res)
-                                {
-                                    extraInfo += b.ToString("X2") + " ";
-                                }
-                                CastInfoEvent("Could not start uploading bootloader..." + extraInfo, ActivityType.StartUploadingBootloader);
+                                CastInfoEvent("Could not start uploading bootloader..." + ReplyInfo(0, res), ActivityType.StartUploadingBootloader);
                                 return false;
                             }
                         }
@@ -1729,12 +1723,7 @@ S9035000AC";
 
                         if ((res.Length != 8) || (res[7] != 0xA5) || (res[6] != 0x00))
                         {
-                            extraInfo = "1L" + res.Length.ToString("X2") + " ";
-                            foreach (byte b in res)
-                            {
-                                extraInfo += b.ToString("X2") + " ";
-                            }
-                            CastInfoEvent("Could not start uploading bootloader..." + extraInfo, ActivityType.StartUploadingBootloader);
+                            CastInfoEvent("Could not start uploading bootloader..." + ReplyInfo(1, res), ActivityType.StartUploadingBootloader);
                             return false;
                         }
                         for (int frame = 0; frame < framecount; frame++)
@@ -1752,12 +1741,7 @@ S9035000AC";
                             res = sendBootloaderDataCommand(dataframe, 8);
                             if ((res.Length != 8) || (res[7] != (byte)(frame * 7)) || (res[6] != 0x00))
                             {
-                                extraInfo = "1L" + res.Length.ToString("X2") + " ";
-                                foreach (byte b in res)
-                                {
-                                    extraInfo += b.ToString("X2") + " ";
-                                }
-                                CastInfoEvent("Could not upload bootloader..." + extraInfo, ActivityType.StartUploadingBootloader);
+                                CastInfoEvent("Could not upload bootloader..." + ReplyInfo(1, res), ActivityType.StartUploadingBootloader);
                                 return false;
                             }
                         }
@@ -1783,16 +1767,7 @@ S9035000AC";
                         byte[] res = sendBootloaderAddressCommand((ushort)address, (byte)(len - 4));
                         if ((res.Length != 8) || (res[7] != 0xA5) || (res[6] != 0x00))
                         {
-                            extraInfo = "2L" + res.Length.ToString("X2") + " ";
-                            foreach (byte b in res)
-                            {
-                                extraInfo += b.ToString("X2") + " ";
-                            }
-                            foreach (byte b in res)
-                            {
-                                extraInfo += b.ToString("X2") + " ";
-                            }
-                            CastInfoEvent("Could not start uploading bootloader..." + extraInfo, ActivityType.StartUploadingBootloader);
+                            CastInfoEvent("Could not start uploading bootloader..." + ReplyInfo(2, res), ActivityType.StartUploadingBootloader);
                             return false;
                         }
                         for (int frame = 0; frame < framecount; frame++)
@@ -1810,12 +1785,7 @@ S9035000AC";
                             res = sendBootloaderDataCommand(dataframe, 8);
                             if ((res.Length != 8) || (res[7] != (byte)(frame * 7)) || (res[6] != 0x00))
                             {
-                                extraInfo = "2L" + res.Length.ToString("X2") + " ";
-                                foreach (byte b in res)
-                                {
-                                    extraInfo += b.ToString("X2") + " ";
-                                }
-                                CastInfoEvent("Could not upload bootloader..." + extraInfo, ActivityType.StartUploadingBootloader);
+                                CastInfoEvent("Could not upload bootloader..." + ReplyInfo(2, res), ActivityType.StartUploadingBootloader);
                                 return false;
                             }
                         }
@@ -1838,12 +1808,7 @@ S9035000AC";
                             byte[] res = sendBootVectorAddressSRAM(address);
                             if ((res.Length != 8) /*|| (res[7] != 0xC1)*/ || (res[6] != 0x00))
                             {
-                                extraInfo = "9L" + res.Length.ToString("X2") + " ";
-                                foreach (byte b in res)
-                                {
-                                    extraInfo += b.ToString("X2") + " ";
-                                }
-                                CastInfoEvent("Could not execute bootloader..." + extraInfo, ActivityType.FinishedUploadingBootloader);
+                                CastInfoEvent("Could not execute bootloader..." + ReplyInfo(9, res), ActivityType.FinishedUploadingBootloader);
                                 return false;
                             }
                         }
@@ -1862,12 +1827,7 @@ S9035000AC";
                             byte[] res = sendBootVectorAddressSRAM(address);
                             if ((res.Length != 8) /*|| (res[7] != 0xC1)*/ || (res[6] != 0x00))
                             {
-                                extraInfo = "8L" + res.Length.ToString("X2") + " ";
-                                foreach (byte b in res)
-                                {
-                                    extraInfo += b.ToString("X2") + " ";
-                                }
-                                CastInfoEvent("Could not execute bootloader..." + extraInfo, ActivityType.FinishedUploadingBootloader);
+                                CastInfoEvent("Could not execute bootloader..." + ReplyInfo(8, res), ActivityType.FinishedUploadingBootloader);
                                 return false;
                             }
                         }
@@ -1887,12 +1847,7 @@ S9035000AC";
                             byte[] res = sendBootVectorAddressSRAM(address);
                             if ((res.Length != 8) /*|| (res[7] != 0xC1)*/ || (res[6] != 0x00))
                             {
-                                extraInfo = "7L" + res.Length.ToString("X2") + " ";
-                                foreach (byte b in res)
-                                {
-                                    extraInfo += b.ToString("X2") + " ";
-                                }
-                                CastInfoEvent("Could not execute bootloader..." + extraInfo, ActivityType.FinishedUploadingBootloader);
+                                CastInfoEvent("Could not execute bootloader..." + ReplyInfo(7, res), ActivityType.FinishedUploadingBootloader);
                                 return false;
                             }
                         }
@@ -1914,9 +1869,18 @@ S9035000AC";
         /// Erases the flash in the ECU by sending the delete command to the bootloader running in the ECUs SRAM
         /// </summary>
         /// <returns></returns>
+        // readable reply for the bootloader upload errors (used to be a debug code like "0L00")
+        private static string ReplyInfo(int step, byte[] res)
+        {
+            if (res == null || res.Length == 0)
+                return " (step " + step + ": no reply)";
+            return " (step " + step + ": reply " + BitConverter.ToString(res).Replace('-', ' ') + ")";
+        }
+
         public bool EraseFlash()
         {
             CastInfoEvent("Erasing FLASH...", ActivityType.StartErasingFlash);
+            CastProgressWriteEvent(0); // the bootloader upload left it at 100%
 
             byte[] res = sendBootLoaderEraseCommand();
             string extraInfo = string.Empty;
@@ -2422,12 +2386,12 @@ S9035000AC";
         public ECUType GetECUType(string flashfile)
         {
             byte[] retval = new byte[0x100];
-            Console.WriteLine("Start ECU dump");
+            logger.Debug("Start ECU dump");
             string path = Path.GetDirectoryName(flashfile);
-            Console.WriteLine("Path = " + path);
-            Console.WriteLine("Uploading bootloader");
+            logger.Debug("Path = " + path);
+            logger.Debug("Uploading bootloader");
             UploadBootLoader();
-            Console.WriteLine("Bootloader uploaded");
+            logger.Debug("Bootloader uploaded");
             CastInfoEvent("Getting data from ECU", ActivityType.StartDownloadingFooter);
 
             byte[] buffer2 = new byte[6];
@@ -2471,7 +2435,7 @@ S9035000AC";
             }
             catch (Exception E)
             {
-                Console.WriteLine("Failed to determine boxtype: " + E.Message);
+                logger.Debug("Failed to determine boxtype: " + E.Message);
             }
 
             return rettype;
@@ -2485,7 +2449,7 @@ S9035000AC";
             byte[] checksumbytes = getChecksum();
             foreach (byte b in checksumbytes)
             {
-                Console.WriteLine(b.ToString("X2"));
+                logger.Debug(b.ToString("X2"));
 
             }
         }

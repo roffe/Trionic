@@ -274,6 +274,12 @@ namespace TrionicCANFlasher
             }
         }
 
+        private static string TotalDuration(TimeSpan ts)
+        {
+            int minutes = (int)ts.TotalMinutes, seconds = ts.Seconds;
+            return "Total duration: " + minutes + (minutes == 1 ? " minute " : " minutes ") + seconds + (seconds == 1 ? " second" : " seconds");
+        }
+
         private readonly List<string> m_logLines = new List<string>();
 
         private void logCopy_Click(object sender, RoutedEventArgs e) => textBoxLog.Copy();
@@ -366,7 +372,7 @@ namespace TrionicCANFlasher
                 if (e.Type == ActivityType.FinishedFlashing || e.Type == ActivityType.FinishedDownloadingFlash)
                 {
                     TimeSpan ts = DateTime.Now - dtstart;
-                    AddLogItem("Total duration: " + ts.Minutes + " minutes " + ts.Seconds + " seconds");
+                    AddLogItem(TotalDuration(ts));
                     // Read SRAM reports FinishedDownloadingFlash too, its worker closes its own connection
                     if (m_t7FlashRunning)
                     {
@@ -469,7 +475,7 @@ namespace TrionicCANFlasher
             }
 
             TimeSpan ts = DateTime.Now - dtstart;
-            AddLogItem("Total duration: " + ts.Minutes + " minutes " + ts.Seconds + " seconds");
+            AddLogItem(TotalDuration(ts));
             if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC5)
             {
                 await RunOnWorker(trionic5, trionic5.Cleanup);
@@ -951,7 +957,7 @@ namespace TrionicCANFlasher
                                 SetViewMode(false);
                             }
                             TimeSpan ts = DateTime.Now - dtstart;
-                            AddLogItem("Total duration: " + ts.Minutes + " minutes " + ts.Seconds + " seconds");
+                            AddLogItem(TotalDuration(ts));
                             if (flashed == WriteFlashResult.Cancelled)
                             {
                                 // the user said No or the file doesn't fit the ECU: the FLASH was not touched. Last line, as the
@@ -1471,7 +1477,7 @@ namespace TrionicCANFlasher
                     if (trionic5.openDevice())
                     {
                         Thread.Sleep(1000);
-                        AddLogItem("Aquiring ECU info");
+                        AddLogItem("Acquiring ECU info");
                         trionic5.GetECUInfo(true);
                     }
                     else
@@ -1496,7 +1502,7 @@ namespace TrionicCANFlasher
                     if (trionic7.openDevice())
                     {
                         Thread.Sleep(1000);
-                        AddLogItem("Aquiring ECU info");
+                        AddLogItem("Acquiring ECU info");
                         trionic7.GetECUInfo();
                     }
                     else
@@ -1745,7 +1751,7 @@ namespace TrionicCANFlasher
                         if (trionic5.openDevice())
                         {
                             Thread.Sleep(1000);
-                            AddLogItem("Aquiring snapshot");
+                            AddLogItem("Acquiring snapshot");
                             dtstart = DateTime.Now;
                             trionic5.GetSRAMSnapshot(fileName);
                         }
@@ -1771,7 +1777,7 @@ namespace TrionicCANFlasher
                         if (trionic7.openDevice())
                         {
                             Thread.Sleep(1000);
-                            AddLogItem("Aquiring snapshot");
+                            AddLogItem("Acquiring snapshot");
                             dtstart = DateTime.Now;
                             trionic7.GetSRAMSnapshot(fileName);
                         }
@@ -1793,7 +1799,7 @@ namespace TrionicCANFlasher
                     trionic8.SecurityLevel = AccessLevel.AccessLevelFD;
                     // a failed open used to end here with the input disabled for good; the window can't be closed
                     // during an operation, so it cleans up and gives the input back like the others
-                    if (await OpenOnWorker(trionic8, () => trionic8.openDevice(true), "Aquiring snapshot", "Unable to connect to Trionic 8 ECU"))
+                    if (await OpenOnWorker(trionic8, () => trionic8.openDevice(true), "Acquiring snapshot", "Unable to connect to Trionic 8 ECU"))
                     {
                         BackgroundWorker bgWorker;
                         bgWorker = new BackgroundWorker();

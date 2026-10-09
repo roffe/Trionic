@@ -141,7 +141,7 @@ namespace TrionicCANLib.API
         public bool openDevice()
         {
             bool opened = true;
-            CastInfoEvent("Open called in Trionic7", ActivityType.ConvertingFile);
+            CastInfoEvent("Open called in Trionic 7", ActivityType.ConvertingFile);
             MM_BeginPeriod(1);
 
             if (canUsbDevice is LPCCANDevice && m_UseFlasherOnDevice)
@@ -212,7 +212,7 @@ namespace TrionicCANLib.API
 
             if (!opened)
             {
-                CastInfoEvent("Open failed in Trionic7", ActivityType.ConvertingFile);
+                CastInfoEvent("Open failed in Trionic 7", ActivityType.ConvertingFile);
                 if (canUsbDevice != null)
                 {
                     canUsbDevice.close();
