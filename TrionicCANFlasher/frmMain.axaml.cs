@@ -528,6 +528,31 @@ namespace TrionicCANFlasher
             {
                 LogManager.SuspendLogging();
             }
+            ApplyCanLogging(AppSettings.CanLogging);
+        }
+
+        // canLog*.txt gets every CAN frame at Trace level: written only with "CAN logging" on, or during Log data.
+        // Idempotent, unlike Resume/SuspendLogging (those count).
+        private static void ApplyCanLogging(bool on)
+        {
+            var config = LogManager.Configuration;
+            if (config == null)
+            {
+                return;
+            }
+            foreach (var rule in config.LoggingRules)
+            {
+                foreach (var target in rule.Targets)
+                {
+                    if (target.Name == "canlogfile")
+                    {
+                        if (on) rule.EnableLoggingForLevel(LogLevel.Trace);
+                        else rule.DisableLoggingForLevel(LogLevel.Trace);
+                        break;
+                    }
+                }
+            }
+            LogManager.ReconfigExistingLoggers();
         }
 
         private void SetGenericOptions(ITrionic trionic)
@@ -2315,8 +2340,9 @@ namespace TrionicCANFlasher
             {
                 btnLogData.Content = "Busy..";
 
-                // Force logging on
+                // Force logging on; Log data writes the frames to canLog, whatever "CAN logging" says
                 LogManager.ResumeLogging();
+                ApplyCanLogging(true);
                 dtstart = DateTime.Now;
                 if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC5)
                 {
@@ -2430,6 +2456,7 @@ namespace TrionicCANFlasher
             {
                 UpdateLogManager();
             }
+            ApplyCanLogging(AppSettings.CanLogging);
 
             EnableUserInput(true);
         }

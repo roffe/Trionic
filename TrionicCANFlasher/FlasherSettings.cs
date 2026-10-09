@@ -43,6 +43,7 @@ namespace TrionicCANFlasher
         private int  m_height = -1;
 
         private bool m_enablelog = true;  // "Enable logging"
+        private bool m_canlogging = false; // "CAN logging": every frame to canLog*.txt, verbose
         private bool m_onlypbus  = true;  // "Only P-Bus connection"
         private bool m_onbflash  = true;  // "Use flasher on device" (CombiAdapter)
         private bool m_uselegion = true;  // "Use Legion bootloader"
@@ -273,6 +274,12 @@ namespace TrionicCANFlasher
             set { m_enablelog = value; }
         }
 
+        public bool CanLogging
+        {
+            get { return m_canlogging; }
+            set { m_canlogging = value; }
+        }
+
         public bool UseLegion
         {
             get { return m_uselegion;  }
@@ -349,6 +356,10 @@ namespace TrionicCANFlasher
                 else if (a == "EnableLogging")
                 {
                     m_enablelog = Convert.ToBoolean(value);
+                }
+                else if (a == "CanLogging")
+                {
+                    m_canlogging = Convert.ToBoolean(value);
                 }
                 else if (a == "OnboardFlasher")
                 {
@@ -539,6 +550,7 @@ namespace TrionicCANFlasher
                     w.WriteString("ECU", SelectedECU.Name ?? String.Empty);
 
                     w.WriteBoolean("EnableLogging", m_enablelog);
+                    w.WriteBoolean("CanLogging", m_canlogging);
                     w.WriteBoolean("OnboardFlasher", m_onbflash);
                     w.WriteBoolean("OnlyPBus", m_onlypbus);
                     w.WriteBoolean("UseLegionBootloader", m_uselegion);

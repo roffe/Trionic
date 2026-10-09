@@ -57,6 +57,7 @@ namespace TrionicCANFlasher
 
             cbOnlyPBus.IsChecked = m_settings.OnlyPBus;
             cbEnableLogging.IsChecked = m_settings.EnableLogging;
+            cbCanLogging.IsChecked = m_settings.CanLogging;
             cbUseLegion.IsChecked = m_settings.UseLegion;
             cbOnboardFlasher.IsChecked = m_settings.CombiFlasher;
 
@@ -113,6 +114,7 @@ namespace TrionicCANFlasher
 
             m_settings.OnlyPBus = cbOnlyPBus.IsChecked == true;
             m_settings.EnableLogging = cbEnableLogging.IsChecked == true;
+            m_settings.CanLogging = cbCanLogging.IsChecked == true;
             m_settings.UseLegion = cbUseLegion.IsChecked == true;
             m_settings.CombiFlasher = cbOnboardFlasher.IsChecked == true;
 
@@ -328,6 +330,9 @@ namespace TrionicCANFlasher
                     cbOnlyPBus.IsEnabled = false;
                 }
             }
+
+            // CAN logging only means something while logging is on
+            cbCanLogging.IsEnabled = cbEnableLogging.IsEnabled && cbEnableLogging.IsChecked == true;
         }
 
         /// <summary>
@@ -365,6 +370,11 @@ namespace TrionicCANFlasher
         }
 
         private void cbOnlyPBus_Checkchanged(object sender, RoutedEventArgs e)
+        {
+            SettingsLogic();
+        }
+
+        private void cbEnableLogging_CheckedChanged(object sender, RoutedEventArgs e)
         {
             SettingsLogic();
         }
