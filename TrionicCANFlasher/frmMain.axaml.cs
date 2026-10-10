@@ -954,7 +954,7 @@ namespace TrionicCANFlasher
                 return;
             }
 
-            string fileName = await Dialogs.OpenFile(this, "Bin files", "*.bin");
+            string fileName = await Dialogs.OpenFile(this, "Flash ECU: select the file to flash", "Bin files", "*.bin");
             if (fileName != null)
             {
                 if (checkFileSize(fileName))
@@ -1323,7 +1323,7 @@ namespace TrionicCANFlasher
 
         private async void btnReadECU_Click(object sender, RoutedEventArgs e)
         {
-            string fileName = await Dialogs.SaveFile(this, "Bin files", "bin");
+            string fileName = await Dialogs.SaveFile(this, "Read ECU: save the ECU's flash as", "Bin files", "bin");
             if (fileName != null)
             {
                 if (fileName != string.Empty)
@@ -1783,7 +1783,7 @@ namespace TrionicCANFlasher
 
         private async void btnReadSRAM_Click(object sender, RoutedEventArgs e)
         {
-            string fileName = await Dialogs.SaveFile(this, "SRAM snapshots", "RAM");
+            string fileName = await Dialogs.SaveFile(this, "Read SRAM: save the snapshot as", "SRAM snapshots", "RAM");
             if (fileName != null)
             {
                 if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC5)
@@ -1861,7 +1861,7 @@ namespace TrionicCANFlasher
 
         private async void btnRecoverECU_Click(object sender, RoutedEventArgs e)
         {
-            string fileName = await Dialogs.OpenFile(this, "Binary files", "*.bin");
+            string fileName = await Dialogs.OpenFile(this, "Recover ECU: select the file to flash", "Binary files", "*.bin");
             if (fileName != null)
             {
                 if (checkFileSize(fileName))
@@ -2242,7 +2242,7 @@ namespace TrionicCANFlasher
 
         private async void btnReadECUcalibration_Click(object sender, RoutedEventArgs e)
         {
-            string fileName = await Dialogs.SaveFile(this, "Bin files", "bin");
+            string fileName = await Dialogs.SaveFile(this, "Read ECU calibration: save the calibration as", "Bin files", "bin");
             if (fileName != null)
             {
                 if (fileName != string.Empty)
@@ -2300,7 +2300,7 @@ namespace TrionicCANFlasher
         {
             await Dialogs.Info(this, "Power on ECU", "Information");
 
-            string fileName = await Dialogs.OpenFile(this, "Bin files", "*.bin");
+            string fileName = await Dialogs.OpenFile(this, "Restore T8: select the file to flash", "Bin files", "*.bin");
             if (fileName != null)
             {
                 if (checkFileSize(fileName))
@@ -2689,7 +2689,7 @@ namespace TrionicCANFlasher
 
         private async void btnWriteDID_Click(object sender, RoutedEventArgs e)
         {
-            string fileName = await Dialogs.OpenFile(this, "Did files", "*.did");
+            string fileName = await Dialogs.OpenFile(this, "Write ECU DID: select the DID file", "Did files", "*.did");
             if (fileName != null)
             {
                 if (cbxEcuType.SelectedIndex == (int)ECU.MOTRONIC96)

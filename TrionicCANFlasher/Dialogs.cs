@@ -58,9 +58,10 @@ namespace TrionicCANFlasher
             return await dlg.ShowDialog<bool>(owner);
         }
 
+        /// <param name="title">the picker's title; without one the Linux portal shows its own name ("xdg-desktop-portal-kde")</param>
         /// <param name="patterns">e.g. "*.bin"</param>
         /// <returns>local path, or null when cancelled</returns>
-        public static async Task<string> OpenFile(Window owner, string filterName, params string[] patterns)
+        public static async Task<string> OpenFile(Window owner, string title, string filterName, params string[] patterns)
         {
             // GTK / portal globs are case-sensitive (Windows' aren't): *.bin must also list FOO.BIN
             // ponytail: mixed case like *.Bin still hidden
@@ -71,6 +72,7 @@ namespace TrionicCANFlasher
             {
                 var files = await owner.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
                 {
+                    Title = title,
                     AllowMultiple = false,
                     FileTypeFilter = new[] { new FilePickerFileType(filterName) { Patterns = patterns.Concat(patterns.Select(p => p.ToUpperInvariant())).Distinct().ToArray() } },
                 });
@@ -82,15 +84,17 @@ namespace TrionicCANFlasher
             }
         }
 
+        /// <param name="title">the picker's title (see OpenFile)</param>
         /// <param name="extension">default extension without dot, e.g. "bin"</param>
         /// <returns>local path, or null when cancelled</returns>
-        public static async Task<string> SaveFile(Window owner, string filterName, string extension, string suggestedName = null)
+        public static async Task<string> SaveFile(Window owner, string title, string filterName, string extension, string suggestedName = null)
         {
             owner.IsEnabled = false; // see OpenFile
             try
             {
                 var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
                 {
+                    Title = title,
                     DefaultExtension = extension,
                     SuggestedFileName = suggestedName,
                     ShowOverwritePrompt = true,
