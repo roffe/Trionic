@@ -11,7 +11,11 @@ namespace TrionicCANLib.Checksum
     {
         private readonly static Logger logger = LogManager.GetCurrentClassLogger();
 
-        public static ChecksumResult VerifyChecksum(string filename, bool autocorrect, ChecksumDelegate.ChecksumUpdate delegateShouldUpdate)
+        /// <summary>
+        /// Checks both layers and, when told to, corrects them. layer2ByteSum is the file's layer-2 method (Layer2ByteSum, read
+        /// before editing); without it the stored value decides, which an edit can make it guess wrong.
+        /// </summary>
+        public static ChecksumResult VerifyChecksum(string filename, bool autocorrect, ChecksumDelegate.ChecksumUpdate delegateShouldUpdate, bool? layer2ByteSum = null)
         {
             int checksumAreaOffset = GetChecksumAreaOffset(filename);
             if (checksumAreaOffset > FileT8.Length)
@@ -55,7 +59,7 @@ namespace TrionicCANLib.Checksum
                 }
             }
 
-            return CalculateLayer2Checksum(filename, checksumAreaOffset, autocorrect, delegateShouldUpdate);
+            return CalculateLayer2Checksum(filename, checksumAreaOffset, autocorrect, delegateShouldUpdate, layer2ByteSum);
         }
 
         public static int GetChecksumAreaOffset(string filename)
@@ -130,15 +134,29 @@ namespace TrionicCANLib.Checksum
             return retval;
         }
 
-        static private ChecksumResult CalculateLayer2Checksum(string filename, int OffsetLayer2, bool autocorrect, ChecksumDelegate.ChecksumUpdate delegateShouldUpdate)
+        /// <summary>
+        /// Whether the file's layer-2 checksum is the byte sum (true) or the dword sum (false), null when it is neither. Read it
+        /// while the file verifies and pass it to VerifyChecksum after editing: an edit that carries the byte sum over a 1 MiB
+        /// boundary changes its top 12 bits, and the stored value's top 12 bits were all that told the methods apart.
+        /// </summary>
+        public static bool? Layer2ByteSum(string filename)
         {
-            ChecksumResult result = ChecksumResult.Layer2Failed;
-            uint checksum0 = 0;
-            uint checksum1 = 0;
-            uint sum0 = 0;
-            uint matrix_dimension = 0;
-            uint partial_address = 0;
-            uint x = 0;
+            byte[] complete_file = File.ReadAllBytes(filename);
+            if (complete_file.Length != FileT8.Length) return null;
+            int offset = complete_file[0x20140] << 24 | complete_file[0x20141] << 16 | complete_file[0x20142] << 8 | complete_file[0x20143];
+            if (!ReadLayer2(complete_file, offset, out _, out uint sum0, out uint byteSum, out uint dwordSum)) return null;
+            if (sum0 == byteSum) return true;
+            if (sum0 == dwordSum) return false;
+            return null;
+        }
+
+        /// <summary>
+        /// Finds the layer-2 record in the checksum area: its index in the coded buffer, the stored sum, and the byte sum and the
+        /// dword sum over the range it names. False when there is none.
+        /// </summary>
+        private static bool ReadLayer2(byte[] complete_file, int OffsetLayer2, out int index, out uint sum0, out uint byteSum, out uint dwordSum)
+        {
+            sum0 = byteSum = dwordSum = 0;
             /*
             Get 0x100 byte buffer from CHPTR – CHPTR + 0xFF
             Because level 1 is in that area level1 must be correct first
@@ -147,82 +165,80 @@ namespace TrionicCANLib.Checksum
             [ 1 indexed, not 0 indexed ]
             So, 0x101 byte buffer with first byte ignored (convention)
                          * */
-            byte[] coded_buffer = FileTools.readdatafromfile(filename, OffsetLayer2, 0x100);
-
-            for (int i = 0; i < coded_buffer.Length; i++)
+            byte[] coded_buffer = new byte[0x100];
+            for (int i = 0; i < coded_buffer.Length && OffsetLayer2 >= 0 && OffsetLayer2 + i < complete_file.Length; i++)
             {
-                byte b = coded_buffer[i];
+                byte b = complete_file[OffsetLayer2 + i];
                 b += 0xD6;
                 b ^= 0x21;
                 coded_buffer[i] = b;
             }
 
-            byte[] complete_file = FileTools.readdatafromfile(filename, 0, 0x100000);
-            int index = 0;
-            bool chk_found = false;
-            while (index < 0x100 && !chk_found)
+            // the record is 0x11 bytes: FB sum, FC end of the range, FD its start
+            for (index = 0; index + 0x10 < coded_buffer.Length; index++)
             {
-                if ((coded_buffer[index] == 0xFB) && (coded_buffer[index + 6] == 0xFC) && (coded_buffer[index + 0x0C] == 0xFD))
+                if ((coded_buffer[index] != 0xFB) || (coded_buffer[index + 6] != 0xFC) || (coded_buffer[index + 0x0C] != 0xFD))
                 {
-                    sum0 = ((uint)coded_buffer[index + 1] * 0x01000000 + (uint)coded_buffer[index + 2] * 0x010000 + (uint)coded_buffer[index + 3] * 0x100 + (uint)coded_buffer[index + 4]);
-                    matrix_dimension = (uint)coded_buffer[index + 7] * 0x01000000 + (uint)coded_buffer[index + 8] * 0x010000 + (uint)coded_buffer[index + 9] * 0x100 + (uint)coded_buffer[index + 10];
-                    partial_address = (uint)coded_buffer[index + 0x0d] * 0x01000000 + (uint)coded_buffer[index + 0x0e] * 0x010000 + (uint)coded_buffer[index + 0x0F] * 0x100 + (uint)coded_buffer[index + 0x10];
-                    if (matrix_dimension >= 0x020000)
-                    {
-                        checksum0 = 0;
-                        x = partial_address;
-                        while (x < (matrix_dimension - 4))
-                        {
-                            checksum0 = checksum0 + (uint)complete_file[x];
-                            x++;
-                        }
-                        checksum0 = checksum0 + (uint)complete_file[matrix_dimension - 1];
-                        checksum1 = 0;
-                        x = partial_address;
-                        while (x < (matrix_dimension - 4))
-                        {
-                            checksum1 = checksum1 + (uint)complete_file[x] * 0x01000000 + (uint)complete_file[x + 1] * 0x10000 + (uint)complete_file[x + 2] * 0x100 + (uint)complete_file[x + 3];
-                            x = x + 4;
-                        }
-                        if ((checksum0 & 0xFFF00000) != (sum0 & 0xFFF00000))
-                        {
-                            checksum0 = checksum1;
-                        }
-                        if (checksum0 != sum0)
-                        {
-                            logger.Debug("Layer 2 checksum was invalid, should be updated!");
-                            if (autocorrect)
-                            {
-                                result = UpdateLayer2(filename, OffsetLayer2, checksum0, index);
-                            }
-                            else
-                            {
-                                string filechecksum = sum0.ToString("X8");
-                                string realchecksum = checksum0.ToString("X8");
-                                if (delegateShouldUpdate("Checksum validation Layer 2", filechecksum, realchecksum))
-                                {
-                                    result = UpdateLayer2(filename, OffsetLayer2, checksum0, index);
-                                }
-                                else
-                                {
-                                    result = ChecksumResult.Layer2Failed;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            result = ChecksumResult.Ok;
-                        }
-                        chk_found = true;
-                    }
+                    continue;
                 }
-                index++;
+                sum0 = ((uint)coded_buffer[index + 1] * 0x01000000 + (uint)coded_buffer[index + 2] * 0x010000 + (uint)coded_buffer[index + 3] * 0x100 + (uint)coded_buffer[index + 4]);
+                uint matrix_dimension = (uint)coded_buffer[index + 7] * 0x01000000 + (uint)coded_buffer[index + 8] * 0x010000 + (uint)coded_buffer[index + 9] * 0x100 + (uint)coded_buffer[index + 10];
+                uint partial_address = (uint)coded_buffer[index + 0x0d] * 0x01000000 + (uint)coded_buffer[index + 0x0e] * 0x010000 + (uint)coded_buffer[index + 0x0F] * 0x100 + (uint)coded_buffer[index + 0x10];
+                if (matrix_dimension < 0x020000 || matrix_dimension > complete_file.Length || partial_address > matrix_dimension)
+                {
+                    continue;
+                }
+                byteSum = 0;
+                uint x = partial_address;
+                while (x < (matrix_dimension - 4))
+                {
+                    byteSum = byteSum + (uint)complete_file[x];
+                    x++;
+                }
+                byteSum = byteSum + (uint)complete_file[matrix_dimension - 1];
+                dwordSum = 0;
+                x = partial_address;
+                while (x < (matrix_dimension - 4))
+                {
+                    dwordSum = dwordSum + (uint)complete_file[x] * 0x01000000 + (uint)complete_file[x + 1] * 0x10000 + (uint)complete_file[x + 2] * 0x100 + (uint)complete_file[x + 3];
+                    x = x + 4;
+                }
+                return true;
             }
-            if (!chk_found)
+            return false;
+        }
+
+        static private ChecksumResult CalculateLayer2Checksum(string filename, int OffsetLayer2, bool autocorrect, ChecksumDelegate.ChecksumUpdate delegateShouldUpdate, bool? layer2ByteSum)
+        {
+            byte[] complete_file = FileTools.readdatafromfile(filename, 0, 0x100000);
+            if (!ReadLayer2(complete_file, OffsetLayer2, out int index, out uint sum0, out uint checksum0, out uint checksum1))
             {
                 logger.Debug("Layer 2 checksum could not be calculated [ file incompatible ]");
+                return ChecksumResult.Layer2Failed;
             }
-            return result;
+            // the byte sum or the dword sum: the caller's, else the one the stored value is, else the guess that the byte sum still
+            // has the stored value's top 12 bits
+            bool byteSum = layer2ByteSum ?? (sum0 == checksum0 || (sum0 != checksum1 && (checksum0 & 0xFFF00000) == (sum0 & 0xFFF00000)));
+            if (!byteSum)
+            {
+                checksum0 = checksum1;
+            }
+            if (checksum0 == sum0)
+            {
+                return ChecksumResult.Ok;
+            }
+            logger.Debug("Layer 2 checksum was invalid, should be updated!");
+            if (autocorrect)
+            {
+                return UpdateLayer2(filename, OffsetLayer2, checksum0, index);
+            }
+            string filechecksum = sum0.ToString("X8");
+            string realchecksum = checksum0.ToString("X8");
+            if (delegateShouldUpdate("Checksum validation Layer 2", filechecksum, realchecksum))
+            {
+                return UpdateLayer2(filename, OffsetLayer2, checksum0, index);
+            }
+            return ChecksumResult.Layer2Failed;
         }
 
         private static ChecksumResult UpdateLayer2(string filename, int OffsetLayer2, uint checksum0, int index)
