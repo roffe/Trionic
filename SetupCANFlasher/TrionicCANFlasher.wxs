@@ -14,18 +14,12 @@
 		<WixVariable Id="WixUILicenseRtf" Value="disclaimer.rtf" />
 
 
-		<!-- Lawicel canusbdrv.dll needs the VC++ 2010 runtime -->
-		<Feature Id="VCRedist" Title="Visual C++ 10.0 Runtime" AllowAdvertise="no" Display="hidden" Level="1">
-			<MergeRef Id="VCRedist" />
-		</Feature>
-
 		<DirectoryRef Id="INSTALLFOLDER">
 			<Component Id="C__BD738AAED71DCCEED60CC945A97E1099" Guid="{14C60897-F939-7A8E-9F97-A250ABFB14C2}">
 				<File Id="_BD738AAED71DCCEED60CC945A97E1099" Name="TrionicCANFlasher.exe" KeyPath="yes" DiskId="1" Source="$(var.PublishDir)\TrionicCANFlasher.exe" />
 				<Shortcut Id="_462E17F4E4DB47539FD54ED69225D749" Directory="ProgramMenuFolder" Name="TrionicCANFlasher" Icon="Icon_TrionicCanFlasher.ico" IconIndex="0" Show="normal" WorkingDirectory="TARGETDIR" Advertise="yes" />
 				<Shortcut Id="_49AB8AD443174DEFB4E14140B3272AE1" Directory="DesktopFolder" Name="TrionicCANFlasher" Icon="Icon_TrionicCanFlasher.ico" IconIndex="0" Show="normal" WorkingDirectory="TARGETDIR" Advertise="yes" />
 			</Component>
-			<Merge Id="VCRedist" SourceFile=".\\Microsoft_VC100_CRT_x86.msm" DiskId="1" Language="0"/>
 		</DirectoryRef>
 
 
