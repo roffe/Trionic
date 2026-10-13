@@ -27,23 +27,27 @@ namespace TrionicCANLib.API
         CalculatingChecksum,
         QueryingECUTypeInfo
     }
-    
+
     public enum CANBusAdapter : int
     {
         [Description("Lawicel CANUSB")]
         LAWICEL,
+        [Description("Kvaser HS")]
+        KVASER,
         [Description("CombiAdapter")]
         COMBI,
         [Description("OBDLink SX")]
-        ELM327,
-        [Description("Just4Trionic")]
-        JUST4TRIONIC,
-        [Description("Kvaser HS")]
-        KVASER,
+        SCANTOOL,
+        [Description("OBDLink EX")]
+        SCANTOOL_EX,
         [Description("J2534")]
         J2534,
+        [Description("Just4Trionic")]
+        JUST4TRIONIC,
         [Description("SLCAN")]
-        SLCAN
+        SLCAN,
+        [Description("ELM327")]
+        ELM327
     };
 
     public enum ECU : int

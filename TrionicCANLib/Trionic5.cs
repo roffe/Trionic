@@ -163,6 +163,11 @@ S9035000AC";
                 Sleeptime = SleepTime.ELM327;
                 canUsbDevice = new CANELM327Device() { ForcedBaudrate = m_forcedBaudrate };
             }
+            else if (adapterType is CANBusAdapter.SCANTOOL or CANBusAdapter.SCANTOOL_EX)
+            {
+                Sleeptime = SleepTime.ELM327;
+                canUsbDevice = new CANScantoolDevice(adapterType == CANBusAdapter.SCANTOOL_EX);
+            }
             else if (adapterType == CANBusAdapter.JUST4TRIONIC)
             {
                 canUsbDevice = new Just4TrionicDevice() { ForcedBaudrate = m_forcedBaudrate };
@@ -923,7 +928,7 @@ S9035000AC";
             ulong data, cmd = 0xC0;
 
             // This is why ELM is NOT fun to work with...
-            if (canUsbDevice is CANELM327Device)
+            if (canUsbDevice is CANELM327Device or CANScantoolDevice)
             {
                 uint ret = (uint)EraseTimeoutmS / 100;
                 do
@@ -1037,7 +1042,7 @@ S9035000AC";
                 cmd |= (ulong)((byte)b) << (cnt++) * 8;
 
             // This is why ELM is NOT fun to work with...
-            if (canUsbDevice is CANELM327Device)
+            if (canUsbDevice is CANELM327Device or CANScantoolDevice)
             {
                 uint ret = (uint)GeneralTimeoutmS / 100;
                 do
@@ -1523,7 +1528,7 @@ S9035000AC";
             ulong data, cmd = 0xC8;
 
             // This is why ELM is NOT fun to work with...
-            if (canUsbDevice is CANELM327Device)
+            if (canUsbDevice is CANELM327Device or CANScantoolDevice)
             {
                 uint ret = ChecksumTimeoutmS / 100;
                 do

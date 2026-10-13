@@ -112,6 +112,11 @@ namespace TrionicCANLib.API
                 Sleeptime = SleepTime.ELM327;
                 canUsbDevice = new CANELM327Device() { ForcedBaudrate = m_forcedBaudrate };
             }
+            else if (adapterType is CANBusAdapter.SCANTOOL or CANBusAdapter.SCANTOOL_EX)
+            {
+                Sleeptime = SleepTime.ELM327;
+                canUsbDevice = new CANScantoolDevice(adapterType == CANBusAdapter.SCANTOOL_EX);
+            }
             else if (adapterType == CANBusAdapter.JUST4TRIONIC)
             {
                 canUsbDevice = new Just4TrionicDevice() { ForcedBaudrate = m_forcedBaudrate };
@@ -1086,13 +1091,13 @@ namespace TrionicCANLib.API
 
         private void SendAckMessageCIM()
         {
-            if (canUsbDevice is CANELM327Device) return;
+            if (canUsbDevice is CANELM327Device or CANScantoolDevice) return;
             SendMessage(0x245, 0x0000000000000030);
         }
 
         private void SendAckMessageT8()
         {
-            if (canUsbDevice is CANELM327Device) return;
+            if (canUsbDevice is CANELM327Device or CANScantoolDevice) return;
             SendMessage(0x7E0, 0x0000000000000030);
         }
 
@@ -3468,7 +3473,7 @@ namespace TrionicCANLib.API
                     toReceive -= 2;
                     uint step = 0x21;
 
-                    if ((canUsbDevice is CANELM327Device) == false)
+                    if (canUsbDevice is not (CANELM327Device or CANScantoolDevice))
                         SendMessage(0x7E0, 0x0000000000000030);
 
                     while (ExtraFrameCount > 0)
@@ -3878,7 +3883,7 @@ namespace TrionicCANLib.API
 
                     uint step = 0x21;
 
-                    if ((canUsbDevice is CANELM327Device) == false)
+                    if (canUsbDevice is not (CANELM327Device or CANScantoolDevice))
                         SendMessage(0x7E0, 0x0000000000000130);
 
                     while (ExtraFrameCount > 0)
@@ -4551,7 +4556,7 @@ namespace TrionicCANLib.API
                     uint step = 0x21;
 
                     // Tell ECU to go full bore instead of demanding acks after EVERY. SINGLE. MESSAGE...
-                    if ((canUsbDevice is CANELM327Device) == false)
+                    if (canUsbDevice is not (CANELM327Device or CANScantoolDevice))
                     {
                         cmd = 0x0030;
                         msg = new CANMessage(0x7E0, 0, 3);
@@ -6643,7 +6648,7 @@ namespace TrionicCANLib.API
                     else
                     {
                         logger.Debug("Rx: " + data.ToString("X16"));
-                        if (canUsbDevice is CANELM327Device)
+                        if (canUsbDevice is CANELM327Device or CANScantoolDevice)
                         {
                             if (recoveryMode) BroadcastKeepAlive();
                             else SendKeepAlive();
@@ -6653,7 +6658,7 @@ namespace TrionicCANLib.API
                     if (eraseSw.Elapsed.Minutes >= 2)
                     {
                         eraseSw.Stop();
-                        if (canUsbDevice is CANELM327Device)
+                        if (canUsbDevice is CANELM327Device or CANScantoolDevice)
                         {
                             CastInfoEvent("Erase completed", ActivityType.ErasingFlash);
                             // ELM327 seem to be unable to wait long enough for this response
@@ -7311,7 +7316,7 @@ namespace TrionicCANLib.API
                 else
                 {
                     logger.Debug("Rx: " + data.ToString("X16"));
-                    if (canUsbDevice is CANELM327Device)
+                    if (canUsbDevice is CANELM327Device or CANScantoolDevice)
                     {
                         if (recoveryMode) BroadcastKeepAlive();
                         else SendKeepAlive();
@@ -7320,7 +7325,7 @@ namespace TrionicCANLib.API
                 waitCount++;
                 if (waitCount > 35)
                 {
-                    if (canUsbDevice is CANELM327Device)
+                    if (canUsbDevice is CANELM327Device or CANScantoolDevice)
                     {
                         CastInfoEvent("Erase completed", ActivityType.ErasingFlash);
                         // ELM327 seem to be unable to wait long enough for this response
@@ -7431,7 +7436,7 @@ namespace TrionicCANLib.API
                         {
                             silentWaits = 0;
                             //CastInfoEvent("RequestCorrectlyReceived-ResponsePending", ActivityType.UploadingFlash);
-                            if (canUsbDevice is CANELM327Device)
+                            if (canUsbDevice is CANELM327Device or CANScantoolDevice)
                             {
                                 CastInfoEvent("Response timedout, ELM327 will wait 35 seconds", ActivityType.ErasingFlash);
                                 for (int i = 0; i < 35; i++)
@@ -7537,7 +7542,7 @@ namespace TrionicCANLib.API
                 if (getCanData(data, 0) == 0x03 && getCanData(data, 1) == 0x7F && getCanData(data, 2) == 0x36 && getCanData(data, 3) == 0x78)
                 {
                     CastInfoEvent("RequestCorrectlyReceived-ResponsePending", ActivityType.UploadingFlash);
-                    if (canUsbDevice is CANELM327Device)
+                    if (canUsbDevice is CANELM327Device or CANScantoolDevice)
                     {
                         CastInfoEvent("Response timedout, ELM327 will wait 5 seconds", ActivityType.ErasingFlash);
                         for (int i = 0; i < 5; i++)
@@ -8940,7 +8945,7 @@ namespace TrionicCANLib.API
                                 logger.Debug("Couldn't send message");
 
                             // ELM is slow as it is..
-                            if (!(canUsbDevice is CANELM327Device) && !LegionOptions.Faster && m_sleepTime > 0)
+                            if (canUsbDevice is not (CANELM327Device or CANScantoolDevice) && !LegionOptions.Faster && m_sleepTime > 0)
                             {
                                 Thread.Sleep(m_sleepTime);
                             }

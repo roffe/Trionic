@@ -57,6 +57,11 @@ namespace TrionicCANLib.API
                 Sleeptime = SleepTime.ELM327;
                 canUsbDevice = new CANELM327Device() { ForcedBaudrate = m_forcedBaudrate };
             }
+            else if (adapterType is CANBusAdapter.SCANTOOL or CANBusAdapter.SCANTOOL_EX)
+            {
+                Sleeptime = SleepTime.ELM327;
+                canUsbDevice = new CANScantoolDevice(adapterType == CANBusAdapter.SCANTOOL_EX);
+            }
             else if (adapterType == CANBusAdapter.JUST4TRIONIC)
             {
                 canUsbDevice = new Just4TrionicDevice() { ForcedBaudrate = m_forcedBaudrate };

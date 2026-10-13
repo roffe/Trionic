@@ -136,6 +136,10 @@ namespace TrionicCANLib.API
                 {
                     return CANELM327Device.GetAdapterNames();
                 }
+                else if (adapterType is CANBusAdapter.SCANTOOL or CANBusAdapter.SCANTOOL_EX)
+                {
+                    return CANScantoolDevice.GetAdapterNames();
+                }
                 else if (adapterType == CANBusAdapter.JUST4TRIONIC)
                 {
                     return Just4TrionicDevice.GetAdapterNames();
