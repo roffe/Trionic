@@ -212,6 +212,14 @@ namespace TrionicCANFlasher
                         ComBaudLabel.IsEnabled = true;
                         cbxComSpeed.IsEnabled = true;
                         break;
+                    case (int)CANBusAdapter.SCANTOOL:
+                    case (int)CANBusAdapter.SCANTOOL_EX:
+                        // switched to 2 Mbit by itself
+                        cbxAdapterItem.IsEnabled = true;
+                        AdapterLabel.IsEnabled = true;
+                        ComBaudLabel.IsEnabled = false;
+                        cbxComSpeed.IsEnabled = false;
+                        break;
                     case (int)CANBusAdapter.JUST4TRIONIC:
                         // macOS ports carry no USB id, so the library falls back to the port picked here
                         cbxAdapterItem.IsEnabled = OperatingSystem.IsMacOS();

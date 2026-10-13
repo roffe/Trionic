@@ -10,7 +10,7 @@ The Trionic CAN Flasher runs on Windows, Linux and macOS and supports the follow
 |---|---|---|---|
 | Lawicel CANUSB | Lawicel CANUSB DLL driver | FTDI serial port (`/dev/ttyUSB*`) | FTDI serial port (`/dev/cu.usbserial-LW*`) |
 | CombiAdapter | libusb (WinUSB driver) | libusb + udev rule | libusb |
-| OBDLink SX / ELM327 (not for ME9.6) | serial port | serial port | serial port |
+| OBDLink SX / EX, ELM327 (not for ME9.6) | serial port | serial port | serial port |
 | Just4Trionic | serial port | serial port | serial port |
 | SLCAN | serial port | serial port | serial port |
 | Kvaser HS | Kvaser CANlib driver | Kvaser linuxcan | not supported |
@@ -94,7 +94,7 @@ On Windows, start the device manager, find the serial port (e.g. COM7) under Por
 
 Now you can start the Trionic CAN Flasher. 
 Next is to select your ECU type in main screen.
-Click on Settings and select Adapter type, Adapter and COM speed. In this example we select Trionic 8, OBDLink SX, COM7 (`/dev/ttyUSB0` on Linux, `/dev/cu.usbserial-…` on macOS) and set Com speed to 2Mbit.
+Click on Settings and select Adapter type, Adapter and COM speed. In this example we select Trionic 8, OBDLink SX and COM7 (`/dev/ttyUSB0` on Linux, `/dev/cu.usbserial-…` on macOS). The OBDLink switches itself to 2 Mbit; Com speed is for other ELM327 adapters.
 
 If your cable is also connected to your car's ODB port, you should now have contact. Put your key in Off position and it is highly recommended to have an external charger connected and that you do not touch anything during this process. We want to minimize signaling on the bus, which may disturb the process.
 

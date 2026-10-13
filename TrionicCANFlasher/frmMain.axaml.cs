@@ -235,7 +235,7 @@ namespace TrionicCANFlasher
                 return;
             }
 
-            if (AppSettings.AdapterType.Index == (int)CANBusAdapter.ELM327)
+            if (AppSettings.AdapterType.Index == (int)CANBusAdapter.ELM327 || AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL || AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL_EX)
             {
                 bool warn = false;
                 using (RegistryKey FTDIBUSKey = Registry.LocalMachine.OpenSubKey("SYSTEM\\CurrentControlSet\\Enum\\FTDIBUS"))
@@ -814,6 +814,8 @@ namespace TrionicCANFlasher
                 PreCheck = false;
             }
             else if ((AppSettings.AdapterType.Index == (int)CANBusAdapter.J2534  ||
+                      AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL ||
+                      AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL_EX ||
                       AppSettings.AdapterType.Index == (int)CANBusAdapter.KVASER ||
                       AppSettings.AdapterType.Index == (int)CANBusAdapter.LAWICEL) &&
                       AppSettings.Adapter.Index < 0)
@@ -856,7 +858,7 @@ namespace TrionicCANFlasher
                     btnResetECU.IsEnabled = false;
 
                     // OBDLink cannot handle write on me9.6, and truncate some fields in getecuinfo
-                    if (AppSettings.AdapterType.Index == (int)CANBusAdapter.ELM327)
+                    if (AppSettings.AdapterType.Index == (int)CANBusAdapter.ELM327 || AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL || AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL_EX)
                     {
                         btnFlashECU.IsEnabled = false;
                         btnReadECU.IsEnabled = false;
