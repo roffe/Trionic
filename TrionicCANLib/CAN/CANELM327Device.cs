@@ -31,10 +31,15 @@ namespace TrionicCANLib.CAN
         private Semaphore receiveDataSemaphore = new Semaphore(0, 1);
         private Semaphore sendDataSempahore = new Semaphore(1, 1);
         private bool request0Responses = false;
+        private bool waitsForTimeout = false;
+        private bool isSTN = false;
         private long lastSentTimestamp = 0;
         private Logger logger = LogManager.GetCurrentClassLogger();
 
         object lockObj = new object();
+        byte[] rxBuffer = new byte[1024];
+        // set by the reader on the prompt that answers RequestDeviceReady's interrupt: after "?", on an STN after STOPPED
+        AutoResetEvent interruptAnsweredEvent = new AutoResetEvent(false);
 
         private int m_forcedBaudrate = 38400;
         private string m_forcedComport = string.Empty;
@@ -78,22 +83,11 @@ namespace TrionicCANLib.CAN
         public CANELM327Device()
             : base()
         {
-            m_serialPort.DataReceived += new SerialDataReceivedEventHandler(m_serialPort_DataReceived);
-
             m_readThread = new Thread(readMessages);
             m_readThread.Name = "CANELM327Device.m_readThread";
             m_readThread.IsBackground = true;
             m_endThread = false; // reset for next tries :)
             m_readThread.Start();
-        }
-
-        void m_serialPort_DataReceived(object sender, SerialDataReceivedEventArgs e)
-        {
-            if (receiveData)
-            {
-                receiveDataSemaphore.WaitOne(0);
-                receiveDataSemaphore.Release();
-            }
         }
 
         ~CANELM327Device()
@@ -109,11 +103,15 @@ namespace TrionicCANLib.CAN
         {
             CANMessage canMessage = new CANMessage();
             StringBuilder receiveText = new StringBuilder();
+            bool unknownCommand = false;
+            bool stopped = false; // a STOPPED line since the last prompt, which may come in a later read
 
             logger.Debug("readMessages started");
             while (true)
             {
-                receiveDataSemaphore.WaitOne();
+                // open() and close() talk to the ELM themselves; in between this thread is the port's only reader
+                if (!receiveData || !m_serialPort.IsOpen)
+                    receiveDataSemaphore.WaitOne();
 
                 lock (m_synchObject)
                 {
@@ -126,16 +124,21 @@ namespace TrionicCANLib.CAN
 
                 if (m_serialPort != null)
                 {
-                    if (m_serialPort.IsOpen && m_serialPort.BytesToRead > 0)
+                    if (receiveData && m_serialPort.IsOpen)
                     {
                         string rawString = string.Empty;
                         try
                         {
-                            rawString = m_serialPort.ReadExisting();
+                            // A pending read keeps .NET's serial loop in poll(), which wakes on data; DataReceived + ReadExisting wait out
+                            // two of its 1 ms idle sleeps and a thread pool hop (3.2 ms vs 1.1 ms per frame against an instant ELM)
+                            int read = m_serialPort.BaseStream.Read(rxBuffer, 0, rxBuffer.Length);
+                            rawString = Encoding.ASCII.GetString(rxBuffer, 0, read);
                         }
+                        catch (TimeoutException) { } // ReadTimeout passed with nothing to read
                         catch (Exception e)
                         {
-                            logger.Debug("CANELM372Device ReadExisting()" + e.Message);
+                            logger.Debug("CANELM372Device Read " + e.Message);
+                            Thread.Sleep(10); // closed or unplugged: don't spin
                         }
                         //AddToSerialTrace("RAW RX: " + rawString.Replace("\r",m_cr_sequence));
                         string rxString = rawString.Replace("\n", "").Replace(">", "");// remove prompt characters... we don't need that stuff
@@ -150,14 +153,14 @@ namespace TrionicCANLib.CAN
                             var lines = ExtractLines(ref receiveText);
                             foreach (var rxMessage in lines)
                             {
-                                if (rxMessage.StartsWith("STOPPED")) { isStopped = true; }
+                                if (rxMessage.StartsWith("STOPPED")) { isStopped = true; stopped = true; }
                                 else if (rxMessage.StartsWith("NO DATA")) { } //skip it
                                 else if (rxMessage.StartsWith("CAN ERROR"))
                                 {
                                     //handle error?
                                 }
                                 else if (rxMessage.StartsWith("ELM")) { isStopped = false; } //skip it, this is a trick to stop ELM from listening to more messages and send ready char
-                                else if (rxMessage.StartsWith("?")) { isStopped = false; }
+                                else if (rxMessage.StartsWith("?")) { isStopped = false; unknownCommand = true; }
                                 else if (rxMessage.StartsWith("NO DATA"))
                                 {
                                     logger.Debug("NO DATA");
@@ -214,9 +217,14 @@ namespace TrionicCANLib.CAN
                                 }
                             }
                         }
-                        if (rawString.Contains(">") && !isStopped)
+                        // the STN drops the rest of the line that interrupted it (no "?" follows): its STOPPED prompt is the last one
+                        if (rawString.Contains(">") && (!isStopped || isSTN))
                         {
                             logger.Debug("SERIAL READY");
+                            waitsForTimeout = false;
+                            if (unknownCommand || (stopped && isSTN))
+                                interruptAnsweredEvent.Set();
+                            unknownCommand = stopped = false;
                             sendDataSempahore.WaitOne(0);
                             sendDataSempahore.Release();
                             interfaceBusy = false;
@@ -236,7 +244,8 @@ namespace TrionicCANLib.CAN
         {
             lock (lockObj)
             {
-                sendDataSempahore.WaitOne(timeoutWithoutReadyChar);
+                if (!sendDataSempahore.WaitOne(timeoutWithoutReadyChar))
+                    logger.Debug("No prompt in " + timeoutWithoutReadyChar + " ms, sending anyway");
                 interfaceBusy = true;
                 if (a_message.getID() != _ECUAddress)
                 {
@@ -266,20 +275,34 @@ namespace TrionicCANLib.CAN
                 lastSentCanMessage = a_message.Clone();
                 string sendString = GetELMRequest(a_message);
 
-                
-                if (sendString.Length == 16 && !supports8ByteResponse)
+                bool counted = false;
+                if (isSTN && a_message.elmExpectedResponses > 15)
                 {
-                    bool canIgnoreLastByte = a_message.getCanData(7) == 0;
-                    if (canIgnoreLastByte)
-                        sendString = sendString.Substring(0, 14);
+                    // The ELM count is one hex digit, STPX takes any (as txlogger's scantool adapter sends every frame). It still
+                    // listens on when fewer come, so not counted: Legion's skip tag is one frame where 19 were asked for
+                    sendString = "STPXh:" + a_message.getID().ToString("X3") + ",d:" + sendString + ",r:" + a_message.elmExpectedResponses;
                 }
-                
-                if (sendString.Length<=14 || supports8ByteResponse) //ELM 2.0 supports 8 bytes + response  count, previous versions dont
+                else
                 {
-                    //add expected responses, but this has to be one char only :(
-                    if (a_message.elmExpectedResponses != -1 && a_message.elmExpectedResponses < 16)
-                        sendString += " " + a_message.elmExpectedResponses.ToString("X1");
+                    if (sendString.Length == 16 && !supports8ByteResponse)
+                    {
+                        bool canIgnoreLastByte = a_message.getCanData(7) == 0;
+                        if (canIgnoreLastByte)
+                            sendString = sendString.Substring(0, 14);
+                    }
+
+                    if (sendString.Length<=14 || supports8ByteResponse) //ELM 2.0 supports 8 bytes + response  count, previous versions dont
+                    {
+                        //add expected responses, but this has to be one char only :(
+                        if (a_message.elmExpectedResponses != -1 && a_message.elmExpectedResponses < 16)
+                        {
+                            sendString += " " + a_message.elmExpectedResponses.ToString("X1");
+                            counted = true;
+                        }
+                    }
                 }
+                // without a count the ELM listens on until its own timeout: 25 ms after the T8 read's 19th frame on an OBDLink SX
+                waitsForTimeout = !counted && !request0Responses;
                 sendString += "\r";
 
                 if (m_serialPort.IsOpen)
@@ -423,6 +446,8 @@ namespace TrionicCANLib.CAN
 
                 string answer = WriteToSerialAndWait("ATI\r");    //Print version
                 logger.Debug("OPEN: Version ELM: " + answer);
+                isSTN = (WriteToSerialAndWait("STI\r", 1, ">") ?? "").Contains("STN"); // STPX for response counts over 15
+                logger.Debug("OPEN: STN: " + isSTN);
 
                 answer = WriteToSerialAndWait("ATSP6\r");   //Set protocol type ISO 15765-4 CAN (11 bit ID, 500kb/s)
 
@@ -471,6 +496,8 @@ namespace TrionicCANLib.CAN
 
 
                     receiveData = true;
+                    receiveDataSemaphore.WaitOne(0);
+                    receiveDataSemaphore.Release(); // the reader takes the port over
                     sendDataSempahore.WaitOne(0);
                     sendDataSempahore.Release();
                     return OpenResult.OK;
@@ -649,7 +676,9 @@ namespace TrionicCANLib.CAN
             if (m_serialPort.IsOpen)
             {
                 m_serialPort.ReadTimeout = 3000;
-                WriteToSerialAndWait("ATSP00\r");    // Reset to automatic protocol
+                sendDataSempahore.WaitOne(timeoutWithoutReadyChar); // a running request ends first
+                SendControlMessage("ATSP00\r", false);    // Reset to automatic protocol
+                receiveData = false;
                 WriteToSerialWithTrace("ATZ\r");    //Reset all
                 Thread.Sleep(100);
                 m_serialPort.Close();
@@ -756,20 +785,17 @@ namespace TrionicCANLib.CAN
 
         public override void RequestDeviceReady()
         {
+            if (supports8ByteResponse && !waitsForTimeout)
+                return; // the last frame had a response count, the ELM gave its prompt by itself
             if (!supports8ByteResponse)
-            {
                 Thread.Sleep(1);
-                receiveData = false;
-                var timeout = m_serialPort.ReadTimeout;
-                //send unknown command
-                if (WriteToSerialAndWait("##########\r", 2, "?\r\r>") != null)
-                {
-                    interfaceBusy = false;
-                    sendDataSempahore.WaitOne(0);
-                    sendDataSempahore.Release();
-                }
-               
-                receiveData = true;
+            lock (lockObj)
+            {
+                //send unknown command: it stops the ELM listening for more responses, the reader frees the ready slot on its "?" prompt (an STN: STOPPED)
+                interruptAnsweredEvent.Reset();
+                WriteToSerialWithTrace("##########\r");
+                if (!interruptAnsweredEvent.WaitOne(timeoutWithoutReadyChar))
+                    logger.Debug("RequestDeviceReady: no answer in " + timeoutWithoutReadyChar + " ms");
             }
         }
 
@@ -831,6 +857,15 @@ namespace TrionicCANLib.CAN
 
         private void SendControlMessage(string msg, bool waitForReady)
         {
+            if (receiveData)
+            {
+                // The reader sees the reply's prompt and frees the ready slot; reading the reply here raced it for the port.
+                // ponytail: waitForReady is ignored here, only sendMessageDevice and close() get here and both hold the slot; take it first if another caller turns up
+                WriteToSerialWithTrace(msg);
+                if (!sendDataSempahore.WaitOne(timeoutWithoutReadyChar))
+                    logger.Debug("No prompt in " + timeoutWithoutReadyChar + " ms after " + msg.Trim());
+                return;
+            }
             if (waitForReady)
             {
                 while (interfaceBusy)

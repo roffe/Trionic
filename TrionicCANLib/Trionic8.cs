@@ -3066,6 +3066,7 @@ namespace TrionicCANLib.API
                     Blockstoskip = getCanData(data, 3);
 
                     logger.Debug("Skipping: " + (length * Blockstoskip).ToString() + " bytes");
+                    canUsbDevice.RequestDeviceReady(); // ELM / STN: the 19 frames asked for won't come
                     return retData;
                 }
             }
