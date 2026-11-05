@@ -156,6 +156,14 @@ namespace TrionicCANLib.API
                 {
                     return SLCANDevice.GetAdapterNames();
                 }
+                else if (adapterType == CANBusAdapter.J2534_KLINE)
+                {
+                    return KWP.J2534KLineDevice.GetAdapterNames();
+                }
+                else if (adapterType == CANBusAdapter.KKL)
+                {
+                    return KWP.KKLDevice.GetAdapterNames();
+                }
             }
             catch(Exception ex)
             {

@@ -48,6 +48,13 @@ namespace TrionicCANLib.API
 
         override public void setCANDevice(CANBusAdapter adapterType)
         {
+            if (adapterType is CANBusAdapter.KKL or CANBusAdapter.J2534_KLINE)
+            {
+                canUsbDevice = null;
+                kwpDevice = adapterType == CANBusAdapter.KKL ? new KKLDevice() : new J2534KLineDevice();
+                setFlasher();
+                return;
+            }
             if (adapterType == CANBusAdapter.LAWICEL)
             {
                 canUsbDevice = new CANUSBDevice();
@@ -112,13 +119,13 @@ namespace TrionicCANLib.API
             kwpHandler = KWPHandler.getInstance();
 
             T7Flasher.setKWPHandler(kwpHandler);
-            flash = new T7Flasher();
+            flash = new T7Flasher() { KLine = kwpDevice is KLineDevice };
             flash.onStatusChanged += flash_onStatusChanged;
         }
 
         override public void SetSelectedAdapter(string adapter)
         {
-            if (m_ELM327Kline)
+            if (m_ELM327Kline || kwpDevice is KLineDevice)
             {
                 kwpDevice.ForcedComport = adapter;
             }
@@ -175,9 +182,10 @@ namespace TrionicCANLib.API
             }
             else
             {
+                string channel = kwpDevice is KLineDevice ? "K-line" : "Canbus channel";
                 if (kwpHandler.openDevice())
                 {
-                    CastInfoEvent("Canbus channel opened", ActivityType.ConvertingFile);
+                    CastInfoEvent(channel + " opened", ActivityType.ConvertingFile);
 
                     bool started = false;
                     try
@@ -209,7 +217,7 @@ namespace TrionicCANLib.API
                 }
                 else
                 {
-                    CastInfoEvent("Unable to open canbus channel", ActivityType.ConvertingFile);
+                    CastInfoEvent("Unable to open " + channel, ActivityType.ConvertingFile);
                     kwpHandler.closeDevice();
                     opened = false;
                 }

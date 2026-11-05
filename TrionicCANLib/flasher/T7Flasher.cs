@@ -49,6 +49,22 @@ namespace TrionicCANLib.Flasher
         internal static int m_retryTimeMs = 10000; // tests shorten it
         private const int c_minAttempts = 3;
 
+        // DICE relays a K-line request to the ECU from a 22 byte buffer and forwards the length the frame declares: a
+        // longer transferData reaches the ECU cut short and programs garbage. 16 is DICE's own cap on its 0x3D writes.
+        private const int c_kLineWriteBlock = 16;
+        // the K-line read: 2 round trips per block, the T7 answers up to 0xF5 bytes (txlogger, saabctl)
+        private const int c_kLineReadBlock = 0xF5;
+        // erased runs this long are not written (the chip erase left them 0xFF): a requestDownload costs less than
+        // 32 blocks. Saves about 15% of a stock bin's blocks
+        private const int c_kLineSkipRun = 0x200;
+        private const int c_kLineMisses = 10;
+
+        /// <summary>
+        /// The ECU is behind DICE on the K-line (KLineDevice): bigger read blocks, and the write goes in 16 byte blocks,
+        /// skips erased runs and never resends a block whose reply was lost.
+        /// </summary>
+        public bool KLine { get; set; }
+
         /// <summary>
         /// Constructor for T7Flasher.
         /// </summary>
@@ -256,7 +272,7 @@ namespace TrionicCANLib.Flasher
 
         private void ReadCommand()
         {
-            const int nrOfBytes = 64;
+            int blockSize = KLine ? c_kLineReadBlock : 64;
             byte[] data;
             logger.Debug("Reading flash content to file: " + m_fileName);
             NotifyStatusChanged(this, new StatusEventArgs("Reading data from ECU..."));
@@ -272,9 +288,10 @@ namespace TrionicCANLib.Flasher
 
                 try
                 {
-                    for (int i = 0; i < 512 * 1024 / nrOfBytes; i++)
+                    for (int address = 0; address < 512 * 1024; address += blockSize)
                     {
-                        if (!readBlock(fileStream, (uint)(nrOfBytes * i), nrOfBytes, out data))
+                        int nrOfBytes = Math.Min(blockSize, 512 * 1024 - address);
+                        if (!readBlock(fileStream, (uint)address, nrOfBytes, out data))
                             return;
                         fileStream.Write(data, 0, nrOfBytes);
                         md5Hash.TransformBlock(data, 0, nrOfBytes, data, 0);
@@ -502,6 +519,8 @@ namespace TrionicCANLib.Flasher
 
                 return;
             }
+            // read before the erase: a file that can't be read must not leave an erased ECU
+            byte[] image = KLine ? File.ReadAllBytes(m_fileName) : null;
             logger.Debug("Start erasing");
             NotifyStatusChanged(this, new StatusEventArgs("Erasing flash..."));
 
@@ -513,6 +532,11 @@ namespace TrionicCANLib.Flasher
                 // the write used to go on here (a commented-out break) and send every block into a
                 // flash that wasn't erased
                 SetFlashStatus(FlashStatus.EraseError);
+                return;
+            }
+            if (KLine)
+            {
+                WriteKLine(image);
                 return;
             }
             logger.Debug("Opening file for reading");
@@ -587,6 +611,84 @@ namespace TrionicCANLib.Flasher
         }
 
         /// <summary>
+        /// The K-line write. Each segment is sent from a requestDownload at the last block the ECU confirmed: after a lost
+        /// reply that block may be programmed already, and programming it again at its own address changes no bits. A
+        /// segment fails after c_kLineMisses requestDownloads in a row that moved nothing.
+        /// </summary>
+        private void WriteKLine(byte[] a_image)
+        {
+            SetFlashStatus(FlashStatus.Writing);
+            foreach ((int start, int end) in KLineSegments(a_image))
+            {
+                NotifyStatusChanged(this, new StatusEventArgs("Writing flash... 0x" + start.ToString("X5") + "-0x" + end.ToString("X5")));
+                int pos = start;
+                for (int misses = 0; pos < end && misses < c_kLineMisses; )
+                {
+                    int anchor = pos;
+                    if (m_kwpHandler.sendWriteRequest((uint)pos, (uint)(end - pos)) == KWPResult.OK)
+                    {
+                        while (pos < end)
+                        {
+                            byte[] block = a_image[pos..Math.Min(pos + c_kLineWriteBlock, end)];
+                            if (m_kwpHandler.sendWriteDataRequest(block, false) != KWPResult.OK)
+                                break;
+                            pos += block.Length;
+                            m_nrOfBytesRead = pos;
+                            if (writeStopped(null))
+                                return;
+                        }
+                    }
+                    misses = pos == anchor ? misses + 1 : 0;
+                    if (pos < end)
+                        logger.Debug("K-line write: re-anchoring at 0x" + pos.ToString("X5") + ", miss " + misses);
+                }
+                if (pos < end)
+                {
+                    NotifyStatusChanged(this, new StatusEventArgs("Failed to write data to flash at 0x" + pos.ToString("X5") + "..."));
+                    SetFlashStatus(FlashStatus.WriteError);
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// The runs of a_image to write: 0x0-0x7B000 and the PI area 0x7FE00-0x80000, as the CAN write, split at erased
+        /// runs of c_kLineSkipRun or more. Starts are even, ends cut trailing 0xFF.
+        /// </summary>
+        internal static List<(int start, int end)> KLineSegments(byte[] a_image)
+        {
+            var segments = new List<(int, int)>();
+            foreach ((int from, int to) in new[] { (0x0, 0x7B000), (0x7FE00, 0x80000) })
+            {
+                int i = from;
+                while (i < to)
+                {
+                    while (i < to && a_image[i] == 0xFF)
+                        i++;
+                    if (i >= to)
+                        break;
+                    int start = i, last = i;
+                    while (i < to)
+                    {
+                        if (a_image[i] != 0xFF)
+                        {
+                            last = i++;
+                            continue;
+                        }
+                        int run = i;
+                        while (run < to && a_image[run] == 0xFF)
+                            run++;
+                        if (run - i >= c_kLineSkipRun)
+                            break;
+                        i = run;
+                    }
+                    segments.Add((start & ~1, last + 1));
+                }
+            }
+            return segments;
+        }
+
+        /// <summary>
         /// stopFlasher or cleanup during a write: no further block is sent (a continue here went on
         /// with the next block). The flash is left part written, a write error for the write timer.
         /// </summary>
@@ -601,7 +703,7 @@ namespace TrionicCANLib.Flasher
                     return false;
             }
             logger.Debug("Write stopped at " + m_nrOfBytesRead);
-            a_fs.Close();
+            a_fs?.Close();
             if (!endThread)
             {
                 NotifyStatusChanged(this, new StatusEventArgs("Write stopped, the flash is incomplete"));

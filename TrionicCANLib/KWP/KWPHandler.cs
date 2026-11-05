@@ -810,20 +810,23 @@ namespace TrionicCANLib.KWP
         /// This method send data to be written to flash. sendWriteRequest must be called before this method.
         /// </summary>
         /// <param name="a_data">The data to be written.</param>
+        /// <param name="a_resendOnTimeout">false: a request whose reply didn't come is not sent again. The ECU may have
+        /// programmed it, and would take the copy as the next block.</param>
         /// <returns>KWPResult</returns>
-        public KWPResult sendWriteDataRequest(byte[] a_data)
+        public KWPResult sendWriteDataRequest(byte[] a_data, bool a_resendOnTimeout = true)
         {
             logger.Trace("sendWriteDataRequest");
 
             KWPReply reply = new KWPReply();
             KWPResult result;
+            int tries = a_resendOnTimeout ? 3 : 1;
 
             //Send request
             //Mode = 0x36
             //PID = no PID used by this request
             //Data = data to be flashed
             //Expected result = 0x76
-            result = sendRequest(new KWPRequest(0x36, a_data), out reply);
+            result = sendRequest(new KWPRequest(0x36, a_data), out reply, tries);
             // 7F 36 21: the ECU is still burning the previous block and keeps this one; the only
             // correct follow-up is this identical 0x36 again. The next block or a 0x34 instead
             // would be taken against the kept buffer (gocan t7kwp TransferDataBlock).
@@ -832,7 +835,7 @@ namespace TrionicCANLib.KWP
             {
                 logger.Debug("transferData: ECU busy, resending");
                 Thread.Sleep(m_busyRetryDelay);
-                result = sendRequest(new KWPRequest(0x36, a_data), out reply);
+                result = sendRequest(new KWPRequest(0x36, a_data), out reply, tries);
             }
             if (result != KWPResult.OK)
                 return result;
@@ -1248,7 +1251,7 @@ namespace TrionicCANLib.KWP
         /// <param name="a_request">The request.</param>
         /// <param name="a_reply">The reply.</param>
         /// <returns>KWPResult</returns>
-        private KWPResult sendRequest(KWPRequest a_request, out KWPReply a_reply)
+        private KWPResult sendRequest(KWPRequest a_request, out KWPReply a_reply, int a_tries = 3)
         {
             logger.Trace("sendRequest");
 
@@ -1271,7 +1274,7 @@ namespace TrionicCANLib.KWP
             try
             {
                 logger.Trace(a_request.ToString());
-                for (int retry = 0; retry < 3; retry++)
+                for (int retry = 0; retry < a_tries; retry++)
                 {
                     result = m_kwpDevice.sendRequest(a_request, out reply);
                     a_reply = reply;
@@ -1294,64 +1297,6 @@ namespace TrionicCANLib.KWP
                 m_requestMutex.ReleaseMutex();
             }
             return KWPResult.Timeout;
-        }
-
-        /// <summary>
-        /// This method sends a KWPRequest and returns a KWPReply.
-        /// </summary>
-        /// <param name="a_request">The request.</param>
-        /// <param name="a_reply">The reply.</param>
-        /// <returns>KWPResult</returns>
-        private KWPResult sendRequest(KWPRequest a_request, out KWPReply a_reply, int expectedLength)
-        {
-            int _maxSendRetries = 3;
-            KWPResult _kwpResult = KWPResult.Timeout;
-            logger.Trace("sendRequest");
-
-            KWPReply reply = new KWPReply();
-            RequestResult result;
-            a_reply = new KWPReply();
-            //logger.Debug("Checking KWP device open");
-            if (!m_kwpDevice.isOpen())
-                return KWPResult.DeviceNotConnected;
-
-            // reset the timer for keep alive (set to 1 seconds now)
-            if (stateTimer != null)
-            {
-                stateTimer.Change(keepAliveTimeout, keepAliveTimeout);
-            }
-
-            m_requestMutex.WaitOne();
-            int _retryCount = 0;
-            result = RequestResult.Unknown; // <GS-11022010>
-            while (_retryCount < _maxSendRetries && result != RequestResult.NoError)
-            {
-                logger.Trace(a_request.ToString());
-                result = m_kwpDevice.sendRequest(a_request, out reply);
-                if ((int)reply.getLength() != expectedLength)
-                {
-                    result = RequestResult.InvalidLength;
-                    
-                }
-                if (result == RequestResult.NoError)
-                {
-             
-                    a_reply = reply;
-                    logger.Trace(reply.ToString());
-                    logger.Trace(""); // empty line
-                    m_requestMutex.ReleaseMutex();
-                    //return KWPResult.OK;
-                    _kwpResult = KWPResult.OK;
-                }
-                else
-                {
-                    logger.Trace("Error in KWPHandler::sendRequest" + result.ToString() + " " + reply.ToString());
-                    m_requestMutex.ReleaseMutex();
-                    //return KWPResult.Timeout;
-                    _kwpResult = KWPResult.Timeout;
-                }
-            }
-            return _kwpResult;
         }
 
         /// <summary>

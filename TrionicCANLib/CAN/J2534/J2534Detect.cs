@@ -20,6 +20,8 @@ namespace TrionicCANLib.CAN.J2534
 
         public bool IsCANSupported => CANChannels > 0;
 
+        public bool IsKLineSupported { get; set; }
+
         public override string ToString()
         {
             return Name;
@@ -70,7 +72,8 @@ namespace TrionicCANLib.CAN.J2534
                             Vendor = key.GetValue("Vendor", "") as string,
                             Name = key.GetValue("Name", "") as string,
                             FunctionLibrary = key.GetValue("FunctionLibrary", "") as string,
-                            CANChannels = key.GetValue("CAN", 0) is int can ? can : 0
+                            CANChannels = key.GetValue("CAN", 0) is int can ? can : 0,
+                            IsKLineSupported = key.GetValue("ISO14230", 0) is int kline && kline != 0
                         });
                     }
                 }
@@ -114,7 +117,8 @@ namespace TrionicCANLib.CAN.J2534
                             Vendor = JsonString(root, "VENDOR"),
                             Name = (JsonString(root, "VENDOR") + " " + JsonString(root, "NAME")).Trim(),
                             FunctionLibrary = lib,
-                            CANChannels = root.TryGetProperty("CAN", out JsonElement can) && can.ValueKind == JsonValueKind.True ? 1 : 0
+                            CANChannels = root.TryGetProperty("CAN", out JsonElement can) && can.ValueKind == JsonValueKind.True ? 1 : 0,
+                            IsKLineSupported = root.TryGetProperty("ISO14230", out JsonElement kline) && kline.ValueKind == JsonValueKind.True
                         });
                     }
                 }

@@ -31,10 +31,13 @@ namespace TrionicCANLibTest
             public Action OnStopCommunication;                           // called when 0x82 arrives
             public Action<byte[]> OnRequest;                             // called first for every request
             public Func<byte[], bool> NoReply;                           // true: the request times out
+            public Func<byte[], bool> LoseReply;                         // true: carried out, but its reply is lost
+            public bool ReadFromFlash;                                   // 21 F0 answers what 2C F0 defined, from Flash
             public bool Open = true;
             public int TransferBlocks;
             private uint m_writeAddress;
             private byte[] m_keptBlock;
+            private int m_readAddress, m_readLength;
 
             public FakeEcu()
             {
@@ -64,8 +67,14 @@ namespace TrionicCANLibTest
                 switch (req[1])
                 {
                     case 0x27: reply = req[2] == 0x05 ? "0467055A64" : "03670634"; break;
-                    case 0x2C: reply = "026CF0"; break;
-                    case 0x21: reply = ReadReply; break;
+                    case 0x2C:
+                        m_readLength = req[4] << 8 | req[5];
+                        m_readAddress = req[6] << 16 | req[7] << 8 | req[8];
+                        reply = "026CF0";
+                        break;
+                    case 0x21:
+                        reply = ReadFromFlash ? (m_readLength + 2).ToString("X2") + "61F0" + Convert.ToHexString(Flash, m_readAddress, m_readLength) : ReadReply;
+                        break;
                     case 0x31: reply = "0271" + req[2].ToString("X2"); break;
                     case 0x3E: reply = "017E"; break;
                     case 0x34:
@@ -87,7 +96,9 @@ namespace TrionicCANLibTest
                         {
                             byte[] block = m_keptBlock ?? req;
                             m_keptBlock = null;
-                            Array.Copy(block, 2, Flash, m_writeAddress, block.Length - 2);
+                            // programming only clears bits
+                            for (int i = 2; i < block.Length; i++)
+                                Flash[m_writeAddress + i - 2] &= block[i];
                             m_writeAddress += (uint)(block.Length - 2);
                         }
                         break;
@@ -95,6 +106,11 @@ namespace TrionicCANLibTest
                     default: reply = "037F" + req[1].ToString("X2") + "11"; break;
                 }
                 if (req[1] != 0x36) Requests.Add(Convert.ToHexString(req));
+                if (LoseReply != null && LoseReply(req))
+                {
+                    r_reply = new KWPReply();
+                    return RequestResult.Timeout;
+                }
                 r_reply = new KWPReply(Convert.FromHexString(reply), a_request.getNrOfPID());
                 return RequestResult.NoError;
             }
@@ -365,6 +381,82 @@ namespace TrionicCANLibTest
                         if (File.Exists(file)) File.Delete(file);
                     }
                 }
+            }
+        }
+
+        // a pattern image with a 64 KiB erased run, which the K-line write skips
+        static byte[] KLineImage()
+        {
+            byte[] image = new byte[0x80000];
+            for (int i = 0; i < image.Length; i++)
+            {
+                image[i] = (byte)(i / 128 + i);
+            }
+            Array.Fill(image, (byte)0xFF, 0x20000, 0x10000);
+            return image;
+        }
+
+        static string WriteTemp(byte[] a_image)
+        {
+            string file = NewFileName();
+            File.WriteAllBytes(file, a_image);
+            return file;
+        }
+
+        [TestMethod]
+        public void KLineWriteReanchorsAfterLostReply()
+        {
+            // a transferData whose reply is lost after the ECU programmed it must not be resent: the ECU takes the copy
+            // as the next block, and the rest of the segment lands one block off
+            var ecu = new FakeEcu();
+            int transfers = 0;
+            ecu.LoseReply = req => req[1] == 0x36 && ++transfers == 100;
+            byte[] image = KLineImage();
+            string file = WriteTemp(image);
+            var flasher = NewFlasher(ecu);
+            flasher.KLine = true;
+            try
+            {
+                flasher.writeFlash(file);
+                Assert.AreEqual(IFlasher.FlashStatus.Completed, WaitWhileBusy(flasher));
+                Assert.IsTrue(image.AsSpan(0, 0x7B000).SequenceEqual(ecu.Flash.AsSpan(0, 0x7B000)), "0x0-0x7B000 programmed as in the file");
+                Assert.IsTrue(image.AsSpan(0x7FE00).SequenceEqual(ecu.Flash.AsSpan(0x7FE00)), "0x7FE00-0x80000 programmed as in the file");
+                string lost = ecu.Transfers[99];
+                Assert.AreEqual(2, ecu.Transfers.FindAll(t => t == lost).Count, "the block of the lost reply is sent again at its own address");
+                Assert.IsTrue(ecu.Transfers.TrueForAll(t => t.Length - 6 <= 2 * 16), "no transferData over 16 bytes");
+                Assert.IsFalse(ecu.Transfers.Exists(t => t.CompareTo("20000") >= 0 && t.CompareTo("30000") < 0), "the erased run is skipped");
+                Assert.IsFalse(ecu.Transfers.Exists(t => t.CompareTo("7B000") >= 0 && t.CompareTo("7FE00") < 0), "0x7B000-0x7FE00 is never written");
+            }
+            finally
+            {
+                flasher.cleanup();
+                File.Delete(file);
+            }
+        }
+
+        [TestMethod]
+        public void KLineReadEndsWithShortBlock()
+        {
+            // 0x80000 isn't a multiple of the 0xF5 byte K-line block: the last one is 0xE9
+            var ecu = new FakeEcu { ReadFromFlash = true };
+            KLineImage().CopyTo(ecu.Flash, 0);
+            string file = NewFileName();
+            var flasher = NewFlasher(ecu);
+            flasher.KLine = true;
+            try
+            {
+                flasher.readFlash(file);
+                Assert.AreEqual(IFlasher.FlashStatus.Completed, WaitWhileBusy(flasher));
+                CollectionAssert.AreEqual(ecu.Flash, File.ReadAllBytes(file));
+                List<string> defines = ecu.Requests.FindAll(r => r.StartsWith("082CF003"));
+                Assert.AreEqual(0x80000 / 0xF5 + 1, defines.Count);
+                Assert.AreEqual("082CF00300E907FF17", defines.Last());
+            }
+            finally
+            {
+                flasher.cleanup();
+                if (File.Exists(file)) File.Delete(file);
+                if (File.Exists(Path.ChangeExtension(file, ".md5"))) File.Delete(Path.ChangeExtension(file, ".md5"));
             }
         }
 

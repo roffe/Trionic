@@ -47,7 +47,12 @@ namespace TrionicCANLib.API
         [Description("SLCAN")]
         SLCAN,
         [Description("ELM327")]
-        ELM327
+        ELM327,
+        // Trionic 7 only, KWP2000 through DICE on the K-line
+        [Description("J2534 K-line")]
+        J2534_KLINE,
+        [Description("KKL cable")]
+        KKL
     };
 
     public enum ECU : int
