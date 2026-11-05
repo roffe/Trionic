@@ -73,11 +73,12 @@ namespace TrionicCANFlasher
         private void frmMain_Load()
         {
             Title = "TrionicCANFlasher v" + ProductVersion;
-            logger.Trace(Title);
-            logger.Trace(".dot net CLR " + System.Environment.Version);
+            logger.Info(Title);
+            logger.Info(".NET " + System.Environment.Version);
 
             // get additional info from registry if available
             AppSettings.Load();
+            UpdateLogManager();
 
             // Fetch ECUs from TrionicCANLib.API
             cbxEcuType.Items.Clear();
@@ -118,7 +119,6 @@ namespace TrionicCANFlasher
             trionic8.onCanInfo += trionicCan_onCanInfo;
 
             RestoreView();
-            UpdateLogManager();
             EnableUserInput(true);
         }
 
@@ -152,13 +152,13 @@ namespace TrionicCANFlasher
 
         void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs u)
         {
-            logger.Trace(u.ExceptionObject);
+            logger.Error(u.ExceptionObject as Exception, "Unhandled exception");
             LogManager.Flush();
         }
 
         void TaskScheduler_UnobservedTaskException(object sender, UnobservedTaskExceptionEventArgs e)
         {
-            logger.Trace(e.Exception);
+            logger.Error(e.Exception, "Unobserved task exception");
             AddLogItem(e.Exception.GetBaseException().Message);
             e.SetObserved();
         }
@@ -166,7 +166,7 @@ namespace TrionicCANFlasher
         // Like WinForms Application.ThreadException: log it and keep running
         void Dispatcher_UnhandledException(object sender, DispatcherUnhandledExceptionEventArgs t)
         {
-            logger.Trace(t.Exception);
+            logger.Error(t.Exception, "Unhandled exception");
             t.Handled = true;
             AddLogItem(t.Exception.Message);
         }
@@ -369,7 +369,7 @@ namespace TrionicCANFlasher
             {
                 textBoxLog.CaretIndex = textBoxLog.Text.Length; // follow the newest line
             }
-            logger.Trace(item);
+            logger.Info(item);
         }
 
         void trionicCan_onWriteProgress(object sender, ITrionic.WriteProgressEventArgs e)
@@ -433,10 +433,7 @@ namespace TrionicCANFlasher
             if (progressBar1.Value != percentage)
             {
                 progressBar1.Value = percentage;
-            }
-            if (AppSettings.EnableLogging)
-            {
-                logger.Trace("progress: " + percentage.ToString("F0") + "%");
+                logger.Trace("progress: " + percentage + "%");
             }
         }
 
@@ -490,7 +487,7 @@ namespace TrionicCANFlasher
                 // e.Result rethrows a DoWork exception, which skipped the Cleanup/EnableUserInput below
                 if (e.Error != null)
                 {
-                    logger.Trace(e.Error);
+                    logger.Error(e.Error, "Operation failed");
                     AddLogItem(e.Error.Message);
                 }
                 AddLogItem("Operation failed");
@@ -521,39 +518,7 @@ namespace TrionicCANFlasher
 
         public void UpdateLogManager()
         {
-            if (AppSettings.EnableLogging)
-            {
-                LogManager.ResumeLogging();
-            }
-            else
-            {
-                LogManager.SuspendLogging();
-            }
-            ApplyCanLogging(AppSettings.CanLogging);
-        }
-
-        // canLog*.txt gets every CAN frame at Trace level: written only with "CAN logging" on, or during Log data.
-        // Idempotent, unlike Resume/SuspendLogging (those count).
-        private static void ApplyCanLogging(bool on)
-        {
-            var config = LogManager.Configuration;
-            if (config == null)
-            {
-                return;
-            }
-            foreach (var rule in config.LoggingRules)
-            {
-                foreach (var target in rule.Targets)
-                {
-                    if (target.Name == "canlogfile")
-                    {
-                        if (on) rule.EnableLoggingForLevel(LogLevel.Trace);
-                        else rule.DisableLoggingForLevel(LogLevel.Trace);
-                        break;
-                    }
-                }
-            }
-            LogManager.ReconfigExistingLoggers();
+            FlasherLogs.Apply(AppSettings);
         }
 
         private void SetGenericOptions(ITrionic trionic)
@@ -732,7 +697,7 @@ namespace TrionicCANFlasher
                 catch (Exception ex)
                 {
                     ok = false;
-                    logger.Trace(ex);
+                    logger.Error(ex, "Operation failed");
                     AddLogItem(ex.Message);
                     try
                     {
@@ -740,7 +705,7 @@ namespace TrionicCANFlasher
                     }
                     catch (Exception cleanupEx)
                     {
-                        logger.Trace(cleanupEx);
+                        logger.Error(cleanupEx, "Cleanup failed");
                     }
                 }
                 // not the caller's continuation directly: it would run at the click handler's priority, ahead of
@@ -2374,9 +2339,7 @@ namespace TrionicCANFlasher
             {
                 btnLogData.Content = "Busy..";
 
-                // Force logging on; Log data writes the frames to canLog, whatever "CAN logging" says
-                LogManager.ResumeLogging();
-                ApplyCanLogging(true);
+                FlasherLogs.Apply(AppSettings, true);
                 dtstart = DateTime.Now;
                 if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC5)
                 {
@@ -2482,15 +2445,8 @@ namespace TrionicCANFlasher
 
         private async void btnSettings_Click(object sender, RoutedEventArgs e)
         {
-            bool LastLoggingState = AppSettings.EnableLogging;
-
             await new frmSettings(AppSettings).ShowDialog(this);
-
-            if (LastLoggingState != AppSettings.EnableLogging)
-            {
-                UpdateLogManager();
-            }
-            ApplyCanLogging(AppSettings.CanLogging);
+            UpdateLogManager();
 
             EnableUserInput(true);
         }

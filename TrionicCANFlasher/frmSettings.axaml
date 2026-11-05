@@ -23,8 +23,8 @@
     <TextBlock x:Name="label4" Grid.Row="0" Grid.Column="0" Text="Adapter type" />
     <ComboBox x:Name="cbxAdapterType" Grid.Row="1" Grid.Column="0" SelectionChanged="cbxAdapterType_SelectedIndexChanged" />
     <CheckBox x:Name="cbEnableLogging" Grid.Row="3" Grid.Column="0" Content="Enable logging" IsChecked="True" IsCheckedChanged="cbEnableLogging_CheckedChanged" />
-    <CheckBox x:Name="cbCanLogging" Grid.Row="4" Grid.Column="0" Content="CAN logging"
-              ToolTip.Tip="Write every CAN frame to canLog*.txt in the logging directory (large files). Log data always records the frames." />
+    <Button x:Name="btnLogSettings" Grid.Row="4" Grid.Column="0" Content="Log settings..." Click="btnLogSettings_Click"
+            ToolTip.Tip="How much goes into each log file, with the presets Normal, Verbose and Debug." />
     <CheckBox x:Name="cbOnlyPBus" Grid.Row="5" Grid.Column="0" Content="Only P-Bus connection" IsChecked="True" IsCheckedChanged="cbOnlyPBus_Checkchanged" />
     <CheckBox x:Name="cbOnboardFlasher" Grid.Row="6" Grid.Column="0" Content="Use flasher on device" IsChecked="True" />
 

@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TrionicCANFlasher.frmLogSettings"
+        Title="Log settings"
+        Icon="/TrionicCanFlasher.ico"
+        Width="460"
+        SizeToContent="Height"
+        CanResize="False"
+        CanMinimize="False"
+        CanMaximize="False"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner">
+  <StackPanel Margin="12" Spacing="12">
+    <Grid ColumnDefinitions="140,*" ColumnSpacing="12">
+      <TextBlock Text="Preset" VerticalAlignment="Center" FontWeight="Bold" />
+      <ComboBox x:Name="cbxPreset" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="cbxPreset_SelectionChanged"
+                ToolTip.Tip="Normal: errors and what the main window shows. Verbose: also connecting, sessions and the flasher's steps. Debug: every KWP request and every CAN frame too (large files)." />
+    </Grid>
+    <Grid x:Name="gridLogs" ColumnDefinitions="140,*,Auto" ColumnSpacing="12" RowSpacing="6" />
+    <Grid ColumnDefinitions="*,*" ColumnSpacing="24" Margin="0,4,0,0">
+      <Button Content="Cancel" IsCancel="True" Height="44" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              VerticalContentAlignment="Center" Click="btnCancel_Click" />
+      <Button Grid.Column="1" Content="OK" IsDefault="True" Height="44" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+              VerticalContentAlignment="Center" Click="btnOk_Click" />
+    </Grid>
+  </StackPanel>
+</Window>

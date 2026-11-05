@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -14,6 +15,7 @@ namespace TrionicCANFlasher
     {
         private Logger logger = LogManager.GetCurrentClassLogger();
         private readonly FlasherSettings m_settings;
+        private Dictionary<string, string> m_logLevels;
 
         // Hidden features
         private bool cbEnableSUFeatures = false; // This mode does not have a checkbox
@@ -57,7 +59,7 @@ namespace TrionicCANFlasher
 
             cbOnlyPBus.IsChecked = m_settings.OnlyPBus;
             cbEnableLogging.IsChecked = m_settings.EnableLogging;
-            cbCanLogging.IsChecked = m_settings.CanLogging;
+            m_logLevels = new Dictionary<string, string>(m_settings.LogLevels);
             cbUseLegion.IsChecked = m_settings.UseLegion;
             cbOnboardFlasher.IsChecked = m_settings.CombiFlasher;
 
@@ -114,7 +116,7 @@ namespace TrionicCANFlasher
 
             m_settings.OnlyPBus = cbOnlyPBus.IsChecked == true;
             m_settings.EnableLogging = cbEnableLogging.IsChecked == true;
-            m_settings.CanLogging = cbCanLogging.IsChecked == true;
+            m_settings.LogLevels = m_logLevels;
             m_settings.UseLegion = cbUseLegion.IsChecked == true;
             m_settings.CombiFlasher = cbOnboardFlasher.IsChecked == true;
 
@@ -149,13 +151,9 @@ namespace TrionicCANFlasher
         {
             if (cbxAdapterType.SelectedIndex >= 0)
             {
-                logger.Debug("ITrionic.GetAdapterNames selectedIndex=" + cbxAdapterType.SelectedIndex);
                 string[] adapters = ITrionic.GetAdapterNames((CANBusAdapter)cbxAdapterType.SelectedIndex);
                 cbxAdapterItem.ItemsSource = adapters;
-                foreach (string adapter in adapters)
-                {
-                    logger.Debug("Adaptername=" + adapter);
-                }
+                logger.Debug(cbxAdapterType.SelectedItem + " adapters: " + string.Join(", ", adapters));
 
                 if (adapters.Length > 0)
                 {
@@ -347,8 +345,7 @@ namespace TrionicCANFlasher
                 }
             }
 
-            // CAN logging only means something while logging is on
-            cbCanLogging.IsEnabled = cbEnableLogging.IsEnabled && cbEnableLogging.IsChecked == true;
+            btnLogSettings.IsEnabled = cbEnableLogging.IsEnabled && cbEnableLogging.IsChecked == true;
         }
 
         /// <summary>
@@ -393,6 +390,15 @@ namespace TrionicCANFlasher
         private void cbEnableLogging_CheckedChanged(object sender, RoutedEventArgs e)
         {
             SettingsLogic();
+        }
+
+        private async void btnLogSettings_Click(object sender, RoutedEventArgs e)
+        {
+            Dictionary<string, string> levels = await new frmLogSettings(m_logLevels).ShowDialog<Dictionary<string, string>>(this);
+            if (levels != null)
+            {
+                m_logLevels = levels;
+            }
         }
 
         private void cbUseLegion_CheckedChanged(object sender, RoutedEventArgs e)

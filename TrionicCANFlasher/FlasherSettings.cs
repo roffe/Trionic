@@ -43,7 +43,6 @@ namespace TrionicCANFlasher
         private int  m_height = -1;
 
         private bool m_enablelog = true;  // "Enable logging"
-        private bool m_canlogging = false; // "CAN logging": every frame to canLog*.txt, verbose
         private bool m_onlypbus  = true;  // "Only P-Bus connection"
         private bool m_onbflash  = true;  // "Use flasher on device" (CombiAdapter)
         private bool m_uselegion = true;  // "Use Legion bootloader"
@@ -274,11 +273,8 @@ namespace TrionicCANFlasher
             set { m_enablelog = value; }
         }
 
-        public bool CanLogging
-        {
-            get { return m_canlogging; }
-            set { m_canlogging = value; }
-        }
+        /// <summary>Log settings: a FlasherLogs.Levels entry per log file target.</summary>
+        public Dictionary<string, string> LogLevels { get; set; } = FlasherLogs.Preset(FlasherLogs.DefaultPreset);
 
         public bool UseLegion
         {
@@ -357,9 +353,17 @@ namespace TrionicCANFlasher
                 {
                     m_enablelog = Convert.ToBoolean(value);
                 }
+                // 2.2.0's "CAN logging" checkbox, before the Log settings
                 else if (a == "CanLogging")
                 {
-                    m_canlogging = Convert.ToBoolean(value);
+                    if (Convert.ToBoolean(value))
+                    {
+                        LogLevels["canlogfile"] = "Trace";
+                    }
+                }
+                else if (a.StartsWith("Log.") && LogLevels.ContainsKey(a.Substring(4)) && Array.IndexOf(FlasherLogs.Levels, value) >= 0)
+                {
+                    LogLevels[a.Substring(4)] = value;
                 }
                 else if (a == "OnboardFlasher")
                 {
@@ -550,7 +554,10 @@ namespace TrionicCANFlasher
                     w.WriteString("ECU", SelectedECU.Name ?? String.Empty);
 
                     w.WriteBoolean("EnableLogging", m_enablelog);
-                    w.WriteBoolean("CanLogging", m_canlogging);
+                    foreach (KeyValuePair<string, string> log in LogLevels)
+                    {
+                        w.WriteString("Log." + log.Key, log.Value);
+                    }
                     w.WriteBoolean("OnboardFlasher", m_onbflash);
                     w.WriteBoolean("OnlyPBus", m_onlypbus);
                     w.WriteBoolean("UseLegionBootloader", m_uselegion);
