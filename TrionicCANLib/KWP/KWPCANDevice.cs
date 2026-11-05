@@ -133,7 +133,7 @@ namespace TrionicCANLib.KWP
             {
                 lock (m_lockObject)
                 {
-                    logger.Debug("******* KWPCANDevice: m_CanDevice set");
+                    logger.Debug("CAN device set");
 
                     m_canDevice = a_canDevice;
                 }
@@ -150,7 +150,7 @@ namespace TrionicCANLib.KWP
         /// <returns>True if the device was opened, otherwise false.</returns>
         public override bool open()
         {
-            logger.Debug("******* KWPCANDevice: Opening KWPCANDevice");
+            logger.Debug("Opening KWPCANDevice");
 
             bool retVal = false;
             logger.Debug("Opening m_canDevice");

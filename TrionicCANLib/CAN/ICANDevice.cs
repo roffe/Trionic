@@ -213,7 +213,7 @@ namespace TrionicCANLib.CAN
             bool accept = m_AcceptedMessageIds == null ? true : m_AcceptedMessageIds.Contains(msgId);
             if (!accept)
             {
-                logger.Debug(String.Format("Skipped message with id= {0:X3}", msgId));
+                logger.Trace(String.Format("Skipped message with id= {0:X3}", msgId));
             }
 
             return accept;

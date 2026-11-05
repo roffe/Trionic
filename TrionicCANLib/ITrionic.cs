@@ -192,7 +192,7 @@ namespace TrionicCANLib.API
 
         protected void CastInfoEvent(string info, ActivityType type)
         {
-            logger.Debug(info);
+            logger.Info(info);
             if (onCanInfo != null)
             {
                 onCanInfo(this, new CanInfoEventArgs(info, type));

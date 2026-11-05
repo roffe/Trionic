@@ -45,7 +45,7 @@ namespace TrionicCANLib.KWP
         /// <param name="a_kwpDevice">IKWPDevice to be used by KWPHandler.</param>
         public static void setKWPDevice(IKWPDevice a_kwpDevice)
         {
-            logger.Debug("******* KWPHandler: KWP device set");
+            logger.Debug("KWP device set");
             m_kwpDevice = a_kwpDevice;
         }
 
@@ -154,7 +154,7 @@ namespace TrionicCANLib.KWP
         /// <returns>true on success, otherwise false.</returns>
         public bool openDevice()
         {
-            logger.Debug("******* KWPHandler: Opening kwpDevice");
+            logger.Debug("Opening KWP device");
 
             return m_kwpDevice.open();
         }
@@ -174,7 +174,7 @@ namespace TrionicCANLib.KWP
         /// <returns>true on success, otherwise false.</returns>
         public bool closeDevice()
         {
-            logger.Debug("******* KWPHandler: Closing kwpDevice");
+            logger.Debug("Closing KWP device");
 
             if(m_kwpDevice != null)
                 return m_kwpDevice.close();
@@ -1253,8 +1253,6 @@ namespace TrionicCANLib.KWP
         /// <returns>KWPResult</returns>
         private KWPResult sendRequest(KWPRequest a_request, out KWPReply a_reply, int a_tries = 3)
         {
-            logger.Trace("sendRequest");
-
             KWPReply reply = new KWPReply();
             RequestResult result;
             a_reply = new KWPReply();
@@ -1281,14 +1279,12 @@ namespace TrionicCANLib.KWP
                     if (result == RequestResult.NoError)
                     {
                         logger.Trace(reply.ToString());
-                        logger.Trace(""); // empty line
 
                         return KWPResult.OK;
                     }
                     else
                     {
-                        logger.Trace("Error in KWPHandler::sendRequest: " + result.ToString() + " " + retry.ToString());
-                        logger.Debug("Error in KWPHandler::sendRequest: " + result.ToString() + " " + retry.ToString());
+                        logger.Debug("sendRequest: " + result.ToString() + ", try " + (retry + 1) + " of " + a_tries);
                     }
                 }
             }

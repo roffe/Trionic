@@ -428,7 +428,7 @@ namespace TrionicCANLib.API
 
         private void tmrReadProcessChecker_Tick(object sender, EventArgs e)
         {
-            logger.Debug("tmrReadProcessChecker_Tick");
+            logger.Trace("tmrReadProcessChecker_Tick");
             if (flash != null)
             {
                 float numberkb = (float)flash.getNrOfBytesRead() / 1024F;
@@ -467,7 +467,7 @@ namespace TrionicCANLib.API
 
         private void tmrWriteProcessChecker_Tick(object sender, EventArgs e)
         {
-            logger.Debug("tmrWriteProcessChecker_Tick");
+            logger.Trace("tmrWriteProcessChecker_Tick");
             if (flash != null)
             {
                 float numberkb = (float)flash.getNrOfBytesRead() / 1024F;
@@ -481,7 +481,7 @@ namespace TrionicCANLib.API
                     if (!tmrWriteProcessChecker.Enabled)
                         return;
                     T7Flasher.FlashStatus stat = flash.getStatus();
-                    logger.Debug("tmrWriteProcessChecker_Tick: " + stat.ToString());
+                    logger.Trace("tmrWriteProcessChecker_Tick: " + stat.ToString());
 
                     if (stat == T7Flasher.FlashStatus.Completed)
                     {

@@ -52,7 +52,7 @@ namespace TrionicCANLib.CAN
 
         public CANMessage waitMessage(int a_timeout)
         {
-            logger.Debug("waitMessage");
+            logger.Trace("waitMessage");
             sw.Reset();
             sw.Start();
             CANMessage retMsg = new CANMessage();
@@ -147,7 +147,7 @@ namespace TrionicCANLib.CAN
 
         override public void handleMessage(CANMessage a_message)
         {
-            logger.Debug("handleMessage");
+            logger.Trace("handleMessage");
             if (_queue == null)
             {
                 _queue = new CANMessage[QUEUE_SIZE];
@@ -186,7 +186,7 @@ namespace TrionicCANLib.CAN
             }
             if (size > 1)
             {
-                logger.Debug("Buffering: " + size.ToString() + " messages");
+                logger.Trace("Buffering: " + size.ToString() + " messages");
                 //dumpQueue();
             }
         }
@@ -196,7 +196,7 @@ namespace TrionicCANLib.CAN
         /// </summary>
         public void ClearQueue()
         {
-            logger.Debug("ClearQueue");
+            logger.Trace("ClearQueue");
             _readMessageIndex = _receiveMessageIndex;
         }
     }

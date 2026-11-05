@@ -302,7 +302,7 @@ namespace TrionicCANLib.CAN
         // true for STOPPED and ?, whose prompt answers an interrupt
         private bool HandleLine(string line, CANMessage canMessage)
         {
-            logger.Debug("SERRX: " + line);
+            logger.Trace("SERRX: " + line);
             if (line == "STOPPED" || line == "?")
                 return true;
             if (TryParseFrame(line, canMessage) && acceptMessageId(canMessage.getID()))
@@ -403,7 +403,7 @@ namespace TrionicCANLib.CAN
                     lines.Add(line);
                 return prompt;
             });
-            logger.Debug("SERRX: " + string.Join("|", lines));
+            logger.Trace("SERRX: " + string.Join("|", lines));
             return lines;
         }
 
@@ -451,7 +451,7 @@ namespace TrionicCANLib.CAN
         private void WriteToSerialWithTrace(string line)
         {
             m_serialPort.Write(line);
-            logger.Debug("SERTX: " + line);
+            logger.Trace("SERTX: " + line);
         }
 
         public override uint waitForMessage(uint a_canID, uint timeout, out CANMessage canMsg)

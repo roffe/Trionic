@@ -563,7 +563,7 @@ namespace TrionicCANLib.Flasher
             {
                 fs.ReadExactly(data, 0, nrOfBytes);
                 m_nrOfBytesRead = i * nrOfBytes;
-                logger.Debug("sendWriteDataRequest " + m_nrOfBytesRead);
+                logger.Trace("sendWriteDataRequest 0x" + m_nrOfBytesRead.ToString("X5"));
                 if (m_kwpHandler.sendWriteDataRequest(data) != KWPResult.OK)
                 {
                     // stop here: going on would leave a 128-byte gap (sendWriteDataRequest has
@@ -594,7 +594,7 @@ namespace TrionicCANLib.Flasher
             {
                 fs.ReadExactly(data, 0, nrOfBytes);
                 m_nrOfBytesRead = i * nrOfBytes;
-                logger.Debug("sendWriteDataRequest " + m_nrOfBytesRead.ToString());
+                logger.Trace("sendWriteDataRequest 0x" + m_nrOfBytesRead.ToString("X5"));
 
                 if (m_kwpHandler.sendWriteDataRequest(data) != KWPResult.OK)
                 {

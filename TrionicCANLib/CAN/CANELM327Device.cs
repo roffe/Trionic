@@ -213,7 +213,7 @@ namespace TrionicCANLib.CAN
                                 //disable whitespace logging
                                 if (rxMessage.Length > 0)
                                 {
-                                    logger.Debug("SERRX: " + rxMessage + " Len:" + rxMessage.Length);
+                                    logger.Trace("SERRX: " + rxMessage + " Len:" + rxMessage.Length);
                                 }
                             }
                         }
@@ -691,13 +691,13 @@ namespace TrionicCANLib.CAN
         protected void WriteToSerialWithTrace(string line)
         {
             m_serialPort.Write(line);
-            logger.Debug("SERTX: " + line);
+            logger.Trace("SERTX: " + line);
         }
 
         protected string ReadFromSerialToWithTrace(string readTo)
         {
             string answer = m_serialPort.ReadTo(readTo);
-            logger.Debug("SERRX: " + answer + readTo);
+            logger.Trace("SERRX: " + answer + readTo);
             return answer;
         }
 
