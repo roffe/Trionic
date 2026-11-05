@@ -15,6 +15,10 @@ The Trionic CAN Flasher runs on Windows, Linux and macOS and supports the follow
 | SLCAN | serial port | serial port | serial port |
 | Kvaser HS | Kvaser CANlib driver | Kvaser linuxcan | not supported |
 | J2534 (Beta) | vendor DLL (32-bit, from the registry) | vendor `.so` from `~/.passthru/*.json` | not supported |
+| J2534 K-line, Trionic 7 only | vendor DLL (32-bit, from the registry) | vendor `.so` from `~/.passthru/*.json` | not supported |
+| KKL cable, Trionic 7 only | serial port | serial port | serial port |
+
+On the K-line the flasher talks to a Trionic 7 through DICE (OG 9-3 and 9-5) on OBD pin 7: read, flash, ECU info, DTCs, SRAM and Edit parameters (E85). It is slow, a read or a flash takes 20+ minutes, so connect a charger to the car first.
 
 ## System Requirements
 - Windows 10 or Windows 11. Nothing else to install: the setup brings its own .NET runtime and the Visual C++ 2010 runtime the Lawicel driver needs. <strong>Windows 7, 8.1, XP and Vista are NOT supported anymore.</strong>
@@ -68,6 +72,8 @@ Download TrionicCANFlasher-osx-arm64.zip (Apple silicon) or -osx-x64 (Intel) fro
         "CAN": true,
         "ISO15765": true
       }
+
+  A driver with `"ISO14230": true` also shows up under J2534 K-line.
 
 ### macOS
 - Serial adapters use macOS's built-in FTDI and USB serial drivers and show up as `/dev/cu.*`. The Lawicel CANUSB uses its own FTDI product id; if no `/dev/cu.usbserial-LW…` device appears when it is plugged in, install [FTDI's VCP driver](https://ftdichip.com/drivers/vcp-drivers/).

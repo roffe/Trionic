@@ -205,6 +205,14 @@ namespace TrionicCANFlasher
                         cbxAdapterItem.IsEnabled = true;
                         AdapterLabel.IsEnabled = true;
                         break;
+                    case (int)CANBusAdapter.J2534_KLINE:
+                    case (int)CANBusAdapter.KKL:
+                        // the K-line is 10400 baud
+                        cbxAdapterItem.IsEnabled = true;
+                        AdapterLabel.IsEnabled = true;
+                        ComBaudLabel.IsEnabled = false;
+                        cbxComSpeed.IsEnabled = false;
+                        break;
                     case (int)CANBusAdapter.ELM327:
                     case (int)CANBusAdapter.SLCAN:
                         cbxAdapterItem.IsEnabled = true;

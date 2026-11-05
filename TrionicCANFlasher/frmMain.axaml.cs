@@ -235,7 +235,8 @@ namespace TrionicCANFlasher
                 return;
             }
 
-            if (AppSettings.AdapterType.Index == (int)CANBusAdapter.ELM327 || AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL || AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL_EX)
+            if (AppSettings.AdapterType.Index == (int)CANBusAdapter.ELM327 || AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL || AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL_EX ||
+                AppSettings.AdapterType.Index == (int)CANBusAdapter.KKL)
             {
                 bool warn = false;
                 using (RegistryKey FTDIBUSKey = Registry.LocalMachine.OpenSubKey("SYSTEM\\CurrentControlSet\\Enum\\FTDIBUS"))
@@ -255,7 +256,7 @@ namespace TrionicCANFlasher
                                         if (AppSettings.Adapter.Name != null && AppSettings.Adapter.Name.Equals(PortName))
                                         {
                                             String Latency = NameKey.GetValue("LatencyTimer").ToString();
-                                            AddLogItem(String.Format("ELM327 FTDI setting for {0} LatencyTimer {1}ms.", PortName, Latency));
+                                            AddLogItem(String.Format("FTDI setting for {0} LatencyTimer {1}ms.", PortName, Latency));
                                             if (!Latency.Equals("2") && !Latency.Equals("1"))
                                             {
                                                 warn = true;
@@ -269,7 +270,7 @@ namespace TrionicCANFlasher
                 }
                 if (warn)
                 {
-                    await Dialogs.Info(this, "Warning LatencyTimer should be set to 2 ms", "ELM327 FTDI setting");
+                    await Dialogs.Info(this, "Warning LatencyTimer should be set to 2 ms", "FTDI setting");
                 }
             }
         }
@@ -787,6 +788,18 @@ namespace TrionicCANFlasher
             return opened;
         }
 
+        private static bool IsKLine(int adapterType)
+        {
+            return adapterType == (int)CANBusAdapter.KKL || adapterType == (int)CANBusAdapter.J2534_KLINE;
+        }
+
+        // through DICE the K-line moves a few hundred bytes a second
+        private Task<bool> ConfirmKLine(string operation)
+        {
+            return Dialogs.OkCancel(this, operation + " over K-line will take 20+ minutes. The car must be connected to a charger.",
+                "Critical Warning");
+        }
+
         private void EnableUserInput(bool enable)
         {
             m_operationRunning = !enable;
@@ -817,8 +830,14 @@ namespace TrionicCANFlasher
                       AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL ||
                       AppSettings.AdapterType.Index == (int)CANBusAdapter.SCANTOOL_EX ||
                       AppSettings.AdapterType.Index == (int)CANBusAdapter.KVASER ||
-                      AppSettings.AdapterType.Index == (int)CANBusAdapter.LAWICEL) &&
+                      AppSettings.AdapterType.Index == (int)CANBusAdapter.LAWICEL ||
+                      IsKLine(AppSettings.AdapterType.Index)) &&
                       AppSettings.Adapter.Index < 0)
+            {
+                PreCheck = false;
+            }
+
+            if (IsKLine(AppSettings.AdapterType.Index) && cbxEcuType.SelectedIndex != (int)ECU.TRIONIC7)
             {
                 PreCheck = false;
             }
@@ -841,6 +860,11 @@ namespace TrionicCANFlasher
                     btnReadECUcalibration.IsEnabled = false;
                     btnRestoreT8.IsEnabled = false;
                     btnWriteDID.IsEnabled = false;
+                    // Log data records CAN frames
+                    if (IsKLine(AppSettings.AdapterType.Index))
+                    {
+                        btnLogData.IsEnabled = false;
+                    }
                 }
 
                 else if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC8)
@@ -945,6 +969,10 @@ namespace TrionicCANFlasher
                 cbxEcuType.SelectedIndex == (int)ECU.Z22SEMain_LEG || cbxEcuType.SelectedIndex == (int)ECU.Z22SEMCP_LEG)
                 result = await Dialogs.OkCancel(this, "Attach a charger. Now turn key to ON to wakeup ECU.",
                 "Critical Warning");
+            else if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC7 && IsKLine(AppSettings.AdapterType.Index))
+            {
+                result = await ConfirmKLine("Flashing");
+            }
             else if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC7)
             {
                 result = await Dialogs.OkCancel(this, "Attach a charger. Turn key to ON wait a few seconds, turn to LOCK. Wait 15 to 20 seconds then initiate the flash operation in car.",
@@ -1325,6 +1353,10 @@ namespace TrionicCANFlasher
 
         private async void btnReadECU_Click(object sender, RoutedEventArgs e)
         {
+            if (cbxEcuType.SelectedIndex == (int)ECU.TRIONIC7 && IsKLine(AppSettings.AdapterType.Index) && !await ConfirmKLine("Reading"))
+            {
+                return;
+            }
             string fileName = await Dialogs.SaveFile(this, "Read ECU: save the ECU's flash as", "Bin files", "bin");
             if (fileName != null)
             {
