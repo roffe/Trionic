@@ -21,7 +21,7 @@ The Trionic CAN Flasher runs on Windows, Linux and macOS and supports the follow
 On the K-line the flasher talks to a Trionic 7 through DICE (OG 9-3 and 9-5) on OBD pin 7: read, flash, ECU info, DTCs, SRAM and Edit parameters (E85). It is slow, a read or a flash takes 20+ minutes, so connect a charger to the car first.
 
 ## System Requirements
-- Windows 10 or Windows 11. Nothing else to install: the setup brings its own .NET runtime and the Visual C++ 2010 runtime the Lawicel driver needs. <strong>Windows 7, 8.1, XP and Vista are NOT supported anymore.</strong>
+- Windows 10 or Windows 11. Nothing else to install: the setup brings its own .NET runtime. <strong>Windows 7, 8.1, XP and Vista are NOT supported anymore.</strong>
 - Linux x64 or arm64 with a desktop (X11 or XWayland). A normal desktop install already has the libraries it needs (ICU, OpenSSL, fontconfig).
 - macOS on Apple silicon or Intel.
 
