@@ -153,9 +153,8 @@ namespace CommonSuite
                 using JsonDocument doc = JsonDocument.Parse(releaseInfo);
                 JsonElement release = doc.RootElement;
 
-                string tag_name = release.GetProperty("tag_name").GetString(); // "TrionicCanFlasher_v0.1.72.0"
-                int index = tag_name.IndexOf("_v", 0, tag_name.Length - 1, StringComparison.CurrentCulture);
-                Version v = new Version(tag_name.Substring(index + 2));
+                string tag_name = release.GetProperty("tag_name").GetString(); // "v2.2.0", before 2.0 "TrionicCanFlasher_v0.1.72.0"
+                Version v = new Version(tag_name.Substring(tag_name.LastIndexOf('v') + 1));
                 if (v > m_currentversion)
                 {
                     if (v > maxversion) maxversion = v;

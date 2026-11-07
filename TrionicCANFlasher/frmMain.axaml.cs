@@ -179,7 +179,7 @@ namespace TrionicCANFlasher
                 // the numeric version (tag padded to 0.1.74.0), ProductVersion may carry a -<sha> suffix
                 m_msiUpdater = new MsiUpdater(typeof(frmMain).Assembly.GetName().Version);
                 m_msiUpdater.onDataPump += new MsiUpdater.DataPump(m_msiUpdater_onDataPump);
-                m_msiUpdater.CheckForUpdates("https://api.github.com/repos/mattiasclaesson/trionic/releases/latest");
+                m_msiUpdater.CheckForUpdates("https://api.github.com/repos/roffe/Trionic/releases/latest");
             }
             catch (Exception E)
             {
