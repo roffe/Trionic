@@ -50,7 +50,7 @@ public class caCombiAdapter
     const byte cmd_can_bitrate =    0x81;   ///< set bitrate
     const byte cmd_can_frame =      0x82;   ///< incoming frame
     const byte cmd_can_txframe =    0x83;   ///< outgoing frame
-    const byte cmd_can_filter =     0x84;   ///< acceptance filter, firmware >= 1.2 (unused)
+    const byte cmd_can_filter =     0x84;   ///< acceptance filter, firmware >= 1.2; no ids = accept all
     const byte cmd_can_ecuconnect = 0x89;   ///< connect / disconnect ECU
     const byte cmd_can_readflash =  0x8a;   ///< read ECU flash
     const byte cmd_can_writeflash = 0x8b;   ///< write ECU flash
@@ -142,6 +142,7 @@ public class caCombiAdapter
             read_thread.Start(in_size > 0 ? in_size : 64);
 
             CAN_Open(false);
+            AcceptAllIds();
         }
 
         catch (Exception e)
@@ -186,6 +187,25 @@ public class caCombiAdapter
     {
         UsbDevice dev = usb_dev;
         return dev != null && dev.IsOpen;
+    }
+
+    // Firmware 1.2+ keeps an acceptance filter until it loses power, and other programs (gocan, so txlogger) leave theirs
+    // behind: one set for a T7 drops a T5's replies. This library filters on the host and expects every id.
+    void AcceptAllIds()
+    {
+        if (GetFirmwareVersion() < 0x0102)
+        {
+            return;
+        }
+
+        try
+        {
+            send_command(cmd_can_filter, null, 0, packet_timeout);
+        }
+        catch (Exception e)
+        {
+            logger.Warn("Could not clear the adapter's CAN filter: " + e.Message);
+        }
     }
 
     //---------------------------------------------------------------------------------------------
